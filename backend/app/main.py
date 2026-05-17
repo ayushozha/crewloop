@@ -3,11 +3,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .routes import browser, calls, conversations, dispatch, sms, webhooks
+from .routes import browser, calls, conversations, dispatch, jobs, sms, webhooks
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -25,12 +26,28 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="CrewLoop API", version="0.2.0", lifespan=lifespan)
+
+# The Next.js frontend at crewloop.ayushojha.com calls this API directly from
+# the browser, so we need CORS. Allowing localhost too for local dev.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://crewloop.ayushojha.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(sms.router)
 app.include_router(calls.router)
 app.include_router(webhooks.router)
 app.include_router(conversations.router)
 app.include_router(browser.router)
 app.include_router(dispatch.router)
+app.include_router(jobs.router)
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
