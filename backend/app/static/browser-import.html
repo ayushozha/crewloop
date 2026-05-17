@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CrewLoop - Browser Import</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#F6F4EE;
+    --panel:#FBFAF6;
+    --ink:#161410;
+    --ink-2:#3A372F;
+    --muted:#7A766C;
+    --line:rgba(22,20,16,.12);
+    --line-2:rgba(22,20,16,.07);
+    --green:#2F6F4E;
+    --green-soft:#E6EFE5;
+    --red:#B94731;
+    --red-soft:#F5E3DC;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .topbar{
+    height:62px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 28px;border-bottom:1px solid var(--line);
+    background:rgba(246,244,238,.86);position:sticky;top:0;backdrop-filter:blur(12px);z-index:2;
+  }
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700}
+  .mark{width:24px;height:24px;border-radius:7px;background:var(--ink);display:grid;place-items:center;color:#fff;font-size:13px}
+  .nav{display:flex;gap:16px;font-size:13px;color:var(--muted)}
+  .nav a{color:inherit;text-decoration:none}
+  main{max-width:1180px;margin:0 auto;padding:34px 28px 54px}
+  .hero{display:flex;justify-content:space-between;gap:24px;align-items:end;margin-bottom:24px}
+  h1{
+    font-family:"Instrument Serif", Georgia, serif;font-size:42px;line-height:1;margin:0 0 10px;
+    font-weight:400;letter-spacing:-.02em;
+  }
+  .sub{color:var(--muted);margin:0;max-width:58ch}
+  .source-link{
+    display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);
+    border-radius:999px;padding:9px 12px;color:var(--ink);text-decoration:none;background:var(--panel);
+    font-size:13px;font-weight:600;
+  }
+  .dispatch-link{
+    display:inline-flex;align-items:center;gap:8px;justify-content:center;
+    border:1px solid var(--ink);border-radius:11px;padding:12px 14px;color:#fff;text-decoration:none;background:var(--ink);
+    font-size:13px;font-weight:700;width:max-content;
+  }
+  .import-bar{
+    display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;
+    background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:24px;
+  }
+  input{
+    width:100%;border:1px solid var(--line);border-radius:11px;background:white;color:var(--ink);
+    font:500 14px/1 "Geist", sans-serif;padding:13px 14px;
+  }
+  label{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;white-space:nowrap}
+  input[type="checkbox"]{width:16px;height:16px}
+  button{
+    border:0;border-radius:11px;background:var(--ink);color:white;font:700 14px/1 "Geist", sans-serif;
+    padding:14px 16px;display:inline-flex;align-items:center;gap:8px;
+  }
+  button[disabled]{opacity:.55;cursor:wait}
+  .grid{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px;align-items:start}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  .panel-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line-2)}
+  .panel-head h2{font-size:15px;margin:0;font-weight:700}
+  .mono{font-family:"Geist Mono", ui-monospace, monospace}
+  .chip{font:500 11px/1 "Geist Mono", monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--green);background:var(--green-soft);border-radius:999px;padding:6px 8px}
+  .chip.red{color:var(--red);background:var(--red-soft)}
+  .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;border-bottom:1px solid var(--line-2)}
+  .field{padding:15px 18px;border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2)}
+  .field:nth-child(2n){border-right:0}
+  .field:last-child,.field:nth-last-child(2){border-bottom:0}
+  .label{font:500 11px/1 "Geist Mono", monospace;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}
+  .value{font-size:17px;font-weight:700;color:var(--ink);word-break:break-word}
+  .screenshot{padding:14px}
+  .screenshot img{width:100%;border-radius:11px;border:1px solid var(--line);background:white;display:block}
+  .record{padding:16px 18px;border-top:1px solid var(--line-2);display:grid;gap:8px;color:var(--muted);font-size:13px}
+  .record a{color:var(--ink)}
+  .timeline{padding:10px 18px 18px}
+  .step{display:grid;grid-template-columns:22px 1fr;gap:10px;padding:10px 0;border-bottom:1px solid var(--line-2)}
+  .step:last-child{border-bottom:0}
+  .dot{width:9px;height:9px;border-radius:999px;background:var(--green);margin-top:6px}
+  .step strong{font-size:13px}
+  .step div div{font-size:12px;color:var(--muted);margin-top:3px}
+  .placeholder{padding:46px 18px;color:var(--muted);text-align:center}
+  .error{background:var(--red-soft);color:var(--red);border:1px solid rgba(185,71,49,.24);padding:12px 14px;border-radius:12px;margin-bottom:18px;display:none}
+  @media (max-width:860px){
+    .hero{align-items:start;flex-direction:column}
+    .import-bar{grid-template-columns:1fr}
+    .grid{grid-template-columns:1fr}
+    .fields{grid-template-columns:1fr}
+    .field{border-right:0}
+  }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span class="mark">C</span> CrewLoop <span class="mono" style="color:var(--muted);font-size:12px">Browser Import</span></div>
+  <nav class="nav">
+    <a href="/bay-events/staffing" target="_blank">Bay Events</a>
+    <a href="/dashboard">Dashboard</a>
+    <a href="/docs">API Docs</a>
+  </nav>
+</div>
+
+<main>
+  <section class="hero">
+    <div>
+      <h1>Web source intake</h1>
+      <p class="sub">Bay Events staffing data flows into a CrewLoop job with source evidence, imported fields, and a persisted BrowserSource record.</p>
+    </div>
+    <a class="source-link" href="/bay-events/staffing" target="_blank">Open source page</a>
+  </section>
+
+  <div id="error" class="error"></div>
+
+  <section class="import-bar">
+    <input id="source-url" value="/bay-events/staffing" aria-label="Source URL" />
+    <label><input id="force-local" type="checkbox" checked /> local demo</label>
+    <button id="run">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Import shift
+    </button>
+  </section>
+
+  <section class="grid">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Imported job fields</h2>
+        <span id="engine" class="chip">ready</span>
+      </div>
+      <div id="fields" class="placeholder">No import yet.</div>
+      <div id="record" class="record" style="display:none"></div>
+    </div>
+
+    <aside class="panel">
+      <div class="panel-head">
+        <h2>Source evidence</h2>
+        <span id="confidence" class="chip">0%</span>
+      </div>
+      <div id="screenshot" class="screenshot placeholder">No screenshot yet.</div>
+      <div id="timeline" class="timeline"></div>
+    </aside>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+
+  $("run").addEventListener("click", runImport);
+
+  async function runImport() {
+    const button = $("run");
+    $("error").style.display = "none";
+    button.disabled = true;
+    $("engine").textContent = "importing";
+    try {
+      const response = await fetch("/api/browser/import", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          source_url: $("source-url").value.trim() || null,
+          force_local: $("force-local").checked
+        })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Import failed");
+      renderImport(payload);
+    } catch (error) {
+      $("error").textContent = error.message;
+      $("error").style.display = "block";
+      $("engine").textContent = "failed";
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function renderImport(payload) {
+    const source = payload.browser_source;
+    const job = payload.job;
+    const fields = source.imported_fields;
+    $("engine").textContent = payload.used_browser_use ? "browser use" : "local";
+    $("confidence").textContent = `${Math.round((source.extraction_confidence || 0) * 100)}%`;
+    $("confidence").className = source.extraction_confidence >= .8 ? "chip" : "chip red";
+
+    $("fields").className = "fields";
+    $("fields").innerHTML = [
+      ["Business", fields.business_name],
+      ["Role", fields.role],
+      ["Window", `${fields.start_time} - ${fields.end_time}`],
+      ["Location", fields.location],
+      ["Pay", `$${fields.pay_amount}`],
+      ["Urgency", fields.urgency],
+      ["Required skills", (fields.required_skills || []).join(", ")],
+      ["Status", job.status]
+    ].map(([label, value]) => `
+      <div class="field">
+        <div class="label">${esc(label)}</div>
+        <div class="value">${esc(value)}</div>
+      </div>
+    `).join("");
+
+    $("record").style.display = "grid";
+    $("record").innerHTML = `
+      <div><span class="mono">job_id</span> ${esc(job.id)}</div>
+      <div><span class="mono">browser_source_id</span> ${esc(source.id)}</div>
+      <div><span class="mono">source_url</span> <a href="${esc(source.source_url)}" target="_blank">${esc(source.source_url)}</a></div>
+      ${source.source_html_url ? `<div><span class="mono">html_snapshot</span> <a href="${esc(source.source_html_url)}" target="_blank">${esc(source.source_html_url)}</a></div>` : ""}
+      <a class="dispatch-link" href="/dispatch/${encodeURIComponent(job.id)}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M5 12h13M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Open dispatch room
+      </a>
+    `;
+
+    if (source.screenshot_url) {
+      $("screenshot").className = "screenshot";
+      $("screenshot").innerHTML = `<img src="${esc(source.screenshot_url)}" alt="Browser source evidence" />`;
+    }
+
+    $("timeline").innerHTML = (source.browser_action_log || []).map((step) => `
+      <div class="step">
+        <span class="dot"></span>
+        <div>
+          <strong>${esc(step.step)}</strong>
+          <div>${esc(step.status)}${step.url ? ` · ${esc(step.url)}` : ""}</div>
+        </div>
+      </div>
+    `).join("");
+  }
+</script>
+</body>
+</html>

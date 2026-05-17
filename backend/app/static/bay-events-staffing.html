@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Bay Events Co. - Staffing Board</title>
+<style>
+  :root{
+    --bg:#F4F1EA;
+    --panel:#FFFEFA;
+    --ink:#171511;
+    --muted:#6E695F;
+    --line:#DDD5C6;
+    --green:#2F6F4E;
+    --red:#B94731;
+    --red-soft:#F5E3DC;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  header{
+    height:68px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 34px;border-bottom:1px solid var(--line);background:rgba(255,254,250,.82);
+  }
+  .brand{font-size:20px;font-weight:700;letter-spacing:-.01em}
+  .pill{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+  main{max-width:1120px;margin:0 auto;padding:34px}
+  .heading{display:flex;justify-content:space-between;gap:24px;align-items:flex-end;margin-bottom:24px}
+  h1{font-size:32px;line-height:1.1;margin:0 0 8px;letter-spacing:-.02em}
+  p{margin:0;color:var(--muted)}
+  .status{display:flex;gap:8px;align-items:center;color:var(--red);font-weight:700}
+  .dot{width:9px;height:9px;border-radius:999px;background:var(--red)}
+  .board{
+    background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    overflow:hidden;box-shadow:0 18px 50px rgba(23,21,17,.08);
+  }
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:18px 20px;border-bottom:1px solid #ECE6DC;text-align:left;vertical-align:top}
+  th{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);background:#FBF8F1}
+  tr:last-child td{border-bottom:0}
+  .job-title{font-weight:800;font-size:18px}
+  .sub{color:var(--muted);font-size:13px;margin-top:4px}
+  .tag{
+    display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;
+    background:#EFEAE0;color:#4C463C;font-size:12px;font-weight:650;margin:0 4px 6px 0;
+  }
+  .urgent{background:var(--red-soft);color:var(--red)}
+  .money{font-weight:800}
+  .actions{display:flex;gap:8px;justify-content:flex-end}
+  button{border:0;border-radius:10px;padding:10px 12px;background:var(--ink);color:white;font-weight:700}
+  button.secondary{background:#EFEAE0;color:var(--ink)}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Bay Events Co.</div>
+  <div class="pill">Staffing portal</div>
+</header>
+<main>
+  <div class="heading">
+    <div>
+      <h1>Open staffing needs</h1>
+      <p>Tonight's warehouse and event coverage across San Francisco.</p>
+    </div>
+    <div class="status"><span class="dot"></span> 1 urgent replacement</div>
+  </div>
+
+  <section class="board" aria-label="Open shifts">
+    <table>
+      <thead>
+        <tr>
+          <th>Shift</th>
+          <th>Window</th>
+          <th>Location</th>
+          <th>Requirements</th>
+          <th>Pay</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-shift-id="shift_bay_0427" data-status="canceled" data-urgency="urgent">
+          <td>
+            <div class="job-title">Bartender replacement</div>
+            <div class="sub">Original contractor canceled 42 minutes ago.</div>
+          </td>
+          <td>Tonight<br />6:00 PM - 10:00 PM</td>
+          <td>SoMa<br /><span class="sub">Private product launch</span></td>
+          <td>
+            <span class="tag">event experience</span>
+            <span class="tag">bartending</span>
+            <span class="tag">guest service</span>
+          </td>
+          <td><span class="money">$120</span></td>
+          <td><span class="tag urgent">urgent</span></td>
+          <td>
+            <div class="actions">
+              <button class="secondary">View</button>
+              <button>Fill shift</button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<script id="crewloop-shift-data" type="application/json">
+{
+  "business_name": "Bay Events Co.",
+  "role": "bartender",
+  "description": "Urgent bartender replacement for a private product launch. Original contractor canceled 42 minutes ago.",
+  "location": "SoMa",
+  "start_time": "Tonight, 6:00 PM",
+  "end_time": "Tonight, 10:00 PM",
+  "pay_amount": 120,
+  "urgency": "urgent",
+  "required_skills": ["event experience", "bartending", "guest service"],
+  "source_type": "staffing_portal",
+  "evidence_summary": "Open shift row shows a canceled bartender replacement tonight from 6:00 PM to 10:00 PM in SoMa for $120."
+}
+</script>
+</body>
+</html>

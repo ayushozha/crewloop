@@ -1,6 +1,8 @@
 .env
 .env.*
 !.env.example
+backend/data/
+backend/app/static/evidence/
 backend/.venv
 __pycache__
 *.pyc

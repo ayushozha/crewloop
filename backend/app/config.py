@@ -29,5 +29,11 @@ class Settings(BaseSettings):
         "postgres://admin:i87RfJUBx5HZJuykZt4v9u3zaq10wAqV@localhost:5433/crewloop?sslmode=disable"
     )
 
+    gemini_api_key: str | None = None
+    # Fast: short SMS replies. Pro: voice turns + multimodal (image proof of work).
+    # gemini-3.1-pro-preview is multimodal (text/image/video/audio/PDF in, text out).
+    gemini_model_fast: str = "gemini-3-flash-preview"
+    gemini_model_pro: str = "gemini-3.1-pro-preview"
+
 
 settings = Settings()

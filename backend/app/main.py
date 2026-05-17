@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .routes import calls, conversations, sms, webhooks
+from .routes import browser, calls, conversations, dispatch, sms, webhooks
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -29,6 +29,8 @@ app.include_router(sms.router)
 app.include_router(calls.router)
 app.include_router(webhooks.router)
 app.include_router(conversations.router)
+app.include_router(browser.router)
+app.include_router(dispatch.router)
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -42,3 +44,13 @@ async def health() -> dict[str, str]:
 @app.get("/dashboard", include_in_schema=False)
 async def dashboard() -> FileResponse:
     return FileResponse(STATIC_DIR / "dashboard.html")
+
+
+@app.get("/browser-import", include_in_schema=False)
+async def browser_import_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "browser-import.html")
+
+
+@app.get("/bay-events/staffing", include_in_schema=False)
+async def bay_events_staffing_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "bay-events-staffing.html")

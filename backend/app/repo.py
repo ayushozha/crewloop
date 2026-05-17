@@ -1,10 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 import json
+from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from . import db
+
+
+STORE_PATH = Path(__file__).resolve().parents[1] / "data" / "browser-imports.json"
 
 
 def _decode_jsonb(value: Any) -> Any:
@@ -25,6 +29,117 @@ def _record_to_dict(row: Any) -> dict[str, Any]:
         if isinstance(value, Decimal):
             data[key] = float(value)
     return data
+
+
+def _load_browser_store() -> dict[str, list[dict[str, Any]]]:
+    if not STORE_PATH.exists():
+        return {"jobs": [], "browser_sources": []}
+    with STORE_PATH.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_browser_store(store: dict[str, list[dict[str, Any]]]) -> None:
+    STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = STORE_PATH.with_suffix(".tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        json.dump(store, f, indent=2)
+    tmp_path.replace(STORE_PATH)
+
+
+def _now_iso() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+def _fallback_create_job(imported_fields: dict[str, Any]) -> dict[str, Any]:
+    store = _load_browser_store()
+    job = {
+        "id": str(uuid4()),
+        "business_name": imported_fields["business_name"],
+        "role": imported_fields["role"],
+        "description": imported_fields.get("description"),
+        "location": imported_fields["location"],
+        "start_time": imported_fields["start_time"],
+        "end_time": imported_fields["end_time"],
+        "pay_amount": float(imported_fields["pay_amount"]),
+        "urgency": imported_fields["urgency"],
+        "required_skills": imported_fields["required_skills"],
+        "status": "imported",
+        "created_at": _now_iso(),
+    }
+    store["jobs"].append(job)
+    _save_browser_store(store)
+    return job
+
+
+def _fallback_create_browser_source(
+    *,
+    job_id: UUID | str,
+    source_url: str,
+    source_type: str,
+    imported_fields: dict[str, Any],
+    screenshot_url: str | None,
+    source_html_url: str | None,
+    extraction_confidence: float,
+    update_status: str,
+    browser_action_log: list[dict[str, Any]],
+) -> dict[str, Any]:
+    store = _load_browser_store()
+    source = {
+        "id": str(uuid4()),
+        "job_id": str(job_id),
+        "source_url": source_url,
+        "source_type": source_type,
+        "imported_fields": imported_fields,
+        "screenshot_url": screenshot_url,
+        "source_html_url": source_html_url,
+        "extraction_confidence": float(extraction_confidence),
+        "update_status": update_status,
+        "browser_action_log": browser_action_log,
+        "created_at": _now_iso(),
+    }
+    store["browser_sources"].append(source)
+    _save_browser_store(store)
+    return source
+
+
+def _fallback_get_job(job_id: UUID | str) -> dict[str, Any] | None:
+    store = _load_browser_store()
+    wanted = str(job_id)
+    return next((job for job in store["jobs"] if job["id"] == wanted), None)
+
+
+def _fallback_get_browser_source(source_id: UUID | str) -> dict[str, Any] | None:
+    store = _load_browser_store()
+    wanted = str(source_id)
+    return next((source for source in store["browser_sources"] if source["id"] == wanted), None)
+
+
+def _fallback_list_browser_sources(limit: int = 50) -> list[dict[str, Any]]:
+    store = _load_browser_store()
+    jobs = {job["id"]: job for job in store["jobs"]}
+    rows: list[dict[str, Any]] = []
+    for source in reversed(store["browser_sources"][-limit:]):
+        job = jobs.get(source["job_id"], {})
+        rows.append(
+            {
+                **source,
+                "business_name": job.get("business_name"),
+                "role": job.get("role"),
+                "location": job.get("location"),
+                "start_time": job.get("start_time"),
+                "end_time": job.get("end_time"),
+            }
+        )
+    return rows
+
+
+def _fallback_list_browser_sources_for_job(job_id: UUID | str) -> list[dict[str, Any]]:
+    wanted = str(job_id)
+    return [
+        source
+        for source in _fallback_list_browser_sources(limit=500)
+        if str(source["job_id"]) == wanted
+    ]
 
 
 async def upsert_conversation(phone: str, display_name: str | None = None) -> UUID:
@@ -49,7 +164,10 @@ async def record_message(
     from_number: str | None = None,
     to_number: str | None = None,
     channel: str = "sms",
-) -> UUID:
+) -> UUID | None:
+    """Insert a message; returns the new row id, or None if the row already
+    existed (ON CONFLICT on agentphone_id). Callers can gate side effects (like
+    auto-reply) on a fresh insert so retries don't double-send."""
     conv_id = await upsert_conversation(phone)
     sql = """
         INSERT INTO messages
@@ -67,7 +185,7 @@ async def record_message(
                 sql, conv_id, agentphone_id, direction, body, channel, from_number, to_number,
             )
             await conn.execute(update_conv, conv_id)
-    return row["id"] if row else conv_id
+    return row["id"] if row else None
 
 
 async def record_call(
@@ -193,6 +311,9 @@ async def list_calls_for_conversation(conversation_id: UUID) -> list[dict[str, A
 
 
 async def create_job_from_import(imported_fields: dict[str, Any]) -> dict[str, Any]:
+    if not db.available():
+        return _fallback_create_job(imported_fields)
+
     sql = """
         INSERT INTO jobs (
           business_name, role, description, location, start_time, end_time,
@@ -218,6 +339,9 @@ async def create_job_from_import(imported_fields: dict[str, Any]) -> dict[str, A
 
 
 async def get_job(job_id: UUID) -> dict[str, Any] | None:
+    if not db.available():
+        return _fallback_get_job(job_id)
+
     sql = "SELECT * FROM jobs WHERE id = $1"
     async with db.pool().acquire() as conn:
         row = await conn.fetchrow(sql, job_id)
@@ -236,6 +360,19 @@ async def create_browser_source(
     update_status: str,
     browser_action_log: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    if not db.available():
+        return _fallback_create_browser_source(
+            job_id=job_id,
+            source_url=source_url,
+            source_type=source_type,
+            imported_fields=imported_fields,
+            screenshot_url=screenshot_url,
+            source_html_url=source_html_url,
+            extraction_confidence=extraction_confidence,
+            update_status=update_status,
+            browser_action_log=browser_action_log,
+        )
+
     sql = """
         INSERT INTO browser_sources (
           job_id, source_url, source_type, imported_fields, screenshot_url,
@@ -261,6 +398,9 @@ async def create_browser_source(
 
 
 async def get_browser_source(source_id: UUID) -> dict[str, Any] | None:
+    if not db.available():
+        return _fallback_get_browser_source(source_id)
+
     sql = "SELECT * FROM browser_sources WHERE id = $1"
     async with db.pool().acquire() as conn:
         row = await conn.fetchrow(sql, source_id)
@@ -268,6 +408,9 @@ async def get_browser_source(source_id: UUID) -> dict[str, Any] | None:
 
 
 async def list_browser_sources(limit: int = 50) -> list[dict[str, Any]]:
+    if not db.available():
+        return _fallback_list_browser_sources(limit=limit)
+
     sql = """
         SELECT bs.*, j.business_name, j.role, j.location, j.start_time, j.end_time
         FROM browser_sources bs
@@ -277,4 +420,19 @@ async def list_browser_sources(limit: int = 50) -> list[dict[str, Any]]:
     """
     async with db.pool().acquire() as conn:
         rows = await conn.fetch(sql, limit)
+    return [_record_to_dict(r) for r in rows]
+
+
+async def list_browser_sources_for_job(job_id: UUID | str) -> list[dict[str, Any]]:
+    if not db.available():
+        return _fallback_list_browser_sources_for_job(job_id)
+
+    sql = """
+        SELECT *
+        FROM browser_sources
+        WHERE job_id = $1
+        ORDER BY created_at DESC
+    """
+    async with db.pool().acquire() as conn:
+        rows = await conn.fetch(sql, job_id)
     return [_record_to_dict(r) for r in rows]

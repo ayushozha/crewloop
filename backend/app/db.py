@@ -1,4 +1,5 @@
 from typing import Optional
+import logging
 
 import asyncpg
 
@@ -6,6 +7,8 @@ from .config import settings
 
 
 _pool: Optional[asyncpg.Pool] = None
+_connect_error: Exception | None = None
+logger = logging.getLogger("crewloop.db")
 INIT_SQL = """
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -90,15 +93,21 @@ CREATE INDEX IF NOT EXISTS browser_sources_created_at_idx ON browser_sources (cr
 
 
 async def connect() -> None:
-    global _pool
+    global _pool, _connect_error
     if _pool is None:
-        _pool = await asyncpg.create_pool(
-            dsn=settings.database_url,
-            min_size=1,
-            max_size=8,
-            command_timeout=30,
-        )
-        await ensure_schema()
+        try:
+            _pool = await asyncpg.create_pool(
+                dsn=settings.database_url,
+                min_size=1,
+                max_size=8,
+                command_timeout=30,
+            )
+            await ensure_schema()
+            _connect_error = None
+        except Exception as exc:
+            _connect_error = exc
+            _pool = None
+            logger.warning("Postgres unavailable; browser import will use local JSON storage: %s", exc)
 
 
 async def ensure_schema() -> None:
@@ -119,3 +128,11 @@ def pool() -> asyncpg.Pool:
     if _pool is None:
         raise RuntimeError("DB pool not initialized; lifespan did not run")
     return _pool
+
+
+def available() -> bool:
+    return _pool is not None
+
+
+def connect_error() -> Exception | None:
+    return _connect_error
