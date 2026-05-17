@@ -49,7 +49,7 @@ docs/agentphone-integration.md             This file
 ### `POST /api/sms/send`
 
 ```json
-{ "to": "+14155551234", "body": "Hi Maya — bartender shift tonight 6–10pm in SoMa, $120. Can you cover?" }
+{ "to": "+14155551234", "body": "Hi Emma — bartender shift tonight 6–10pm in SoMa, $120. Can you cover?" }
 ```
 
 Returns AgentPhone's `Send Message` response: `{ id, status, channel, from_number, to_number, media_urls }`.
@@ -59,7 +59,7 @@ Returns AgentPhone's `Send Message` response: `{ id, status, channel, from_numbe
 ```json
 {
   "to": "+14155551234",
-  "initial_greeting": "Hey Maya, CrewLoop here — urgent shift, do you have a sec?",
+  "initial_greeting": "Hey Emma, CrewLoop here — urgent shift, do you have a sec?",
   "system_prompt": "Optional per-call override of the agent's behavior."
 }
 ```

@@ -8,7 +8,23 @@ from uuid import UUID, uuid4
 from . import db
 
 
-STORE_PATH = Path(__file__).resolve().parents[1] / "data" / "browser-imports.json"
+DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+STORE_PATH = DATA_DIR / "crewloop-store.json"
+OLD_STORE_PATH = DATA_DIR / "browser-imports.json"
+STORE_KEYS = [
+    "jobs",
+    "browser_sources",
+    "events",
+    "outreach",
+    "schedules",
+    "payments",
+    "proofs",
+    "notifications",
+    "conversations",
+    "messages",
+    "calls",
+]
+USE_LOCAL_WORKFLOW_STORE = True
 
 
 def _decode_jsonb(value: Any) -> Any:
@@ -32,10 +48,20 @@ def _record_to_dict(row: Any) -> dict[str, Any]:
 
 
 def _load_browser_store() -> dict[str, list[dict[str, Any]]]:
+    if not STORE_PATH.exists() and OLD_STORE_PATH.exists():
+        with OLD_STORE_PATH.open("r", encoding="utf-8") as f:
+            store = json.load(f)
+        for key in STORE_KEYS:
+            store.setdefault(key, [])
+        _save_browser_store(store)
+        return store
     if not STORE_PATH.exists():
-        return {"jobs": [], "browser_sources": []}
+        return {key: [] for key in STORE_KEYS}
     with STORE_PATH.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        store = json.load(f)
+    for key in STORE_KEYS:
+        store.setdefault(key, [])
+    return store
 
 
 def _save_browser_store(store: dict[str, list[dict[str, Any]]]) -> None:
@@ -64,7 +90,13 @@ def _fallback_create_job(imported_fields: dict[str, Any]) -> dict[str, Any]:
         "urgency": imported_fields["urgency"],
         "required_skills": imported_fields["required_skills"],
         "status": "imported",
+        "source": imported_fields.get("source", "browser"),
+        "missing_fields": imported_fields.get("missing_fields", []),
+        "clarifying_question": imported_fields.get("clarifying_question"),
+        "assigned_contractor_id": imported_fields.get("assigned_contractor_id"),
+        "locked_at": imported_fields.get("locked_at"),
         "created_at": _now_iso(),
+        "updated_at": _now_iso(),
     }
     store["jobs"].append(job)
     _save_browser_store(store)
@@ -108,6 +140,23 @@ def _fallback_get_job(job_id: UUID | str) -> dict[str, Any] | None:
     return next((job for job in store["jobs"] if job["id"] == wanted), None)
 
 
+def _fallback_list_jobs(limit: int = 100) -> list[dict[str, Any]]:
+    store = _load_browser_store()
+    return list(reversed(store["jobs"][-limit:]))
+
+
+def _fallback_update_job(job_id: UUID | str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    store = _load_browser_store()
+    wanted = str(job_id)
+    for job in store["jobs"]:
+        if job["id"] == wanted:
+            job.update(updates)
+            job["updated_at"] = _now_iso()
+            _save_browser_store(store)
+            return job
+    return None
+
+
 def _fallback_get_browser_source(source_id: UUID | str) -> dict[str, Any] | None:
     store = _load_browser_store()
     wanted = str(source_id)
@@ -142,7 +191,63 @@ def _fallback_list_browser_sources_for_job(job_id: UUID | str) -> list[dict[str,
     ]
 
 
+def _fallback_insert(kind: str, record: dict[str, Any]) -> dict[str, Any]:
+    store = _load_browser_store()
+    item = {
+        "id": str(uuid4()),
+        "created_at": _now_iso(),
+        **record,
+    }
+    store[kind].append(item)
+    _save_browser_store(store)
+    return item
+
+
+def _fallback_list(kind: str, job_id: UUID | str | None = None) -> list[dict[str, Any]]:
+    store = _load_browser_store()
+    items = list(store[kind])
+    if job_id is not None:
+        wanted = str(job_id)
+        items = [item for item in items if str(item.get("job_id")) == wanted]
+    return items
+
+
+def _fallback_update_first(
+    kind: str,
+    predicate: Any,
+    updates: dict[str, Any],
+) -> dict[str, Any] | None:
+    store = _load_browser_store()
+    for item in store[kind]:
+        if predicate(item):
+            item.update(updates)
+            item["updated_at"] = _now_iso()
+            _save_browser_store(store)
+            return item
+    return None
+
+
 async def upsert_conversation(phone: str, display_name: str | None = None) -> UUID:
+    if not db.available():
+        store = _load_browser_store()
+        existing = next((item for item in store["conversations"] if item["phone"] == phone), None)
+        if existing:
+            if display_name:
+                existing["display_name"] = display_name
+            existing["last_message_at"] = _now_iso()
+            _save_browser_store(store)
+            return UUID(existing["id"])
+        conv = {
+            "id": str(uuid4()),
+            "phone": phone,
+            "display_name": display_name,
+            "last_message_at": _now_iso(),
+            "created_at": _now_iso(),
+        }
+        store["conversations"].append(conv)
+        _save_browser_store(store)
+        return UUID(conv["id"])
+
     sql = """
         INSERT INTO conversations (phone, display_name)
         VALUES ($1, $2)
@@ -169,6 +274,28 @@ async def record_message(
     existed (ON CONFLICT on agentphone_id). Callers can gate side effects (like
     auto-reply) on a fresh insert so retries don't double-send."""
     conv_id = await upsert_conversation(phone)
+    if not db.available():
+        store = _load_browser_store()
+        if agentphone_id and any(item.get("agentphone_id") == agentphone_id for item in store["messages"]):
+            return None
+        message = {
+            "id": str(uuid4()),
+            "conversation_id": str(conv_id),
+            "agentphone_id": agentphone_id,
+            "direction": direction,
+            "body": body,
+            "channel": channel,
+            "from_number": from_number,
+            "to_number": to_number,
+            "created_at": _now_iso(),
+        }
+        store["messages"].append(message)
+        for conv in store["conversations"]:
+            if conv["id"] == str(conv_id):
+                conv["last_message_at"] = message["created_at"]
+        _save_browser_store(store)
+        return UUID(message["id"])
+
     sql = """
         INSERT INTO messages
           (conversation_id, agentphone_id, direction, body, channel, from_number, to_number)
@@ -195,6 +322,19 @@ async def record_call(
     started_at: datetime | None = None,
 ) -> UUID:
     conv_id = await upsert_conversation(to_number)
+    if not db.available():
+        call = _fallback_insert(
+            "calls",
+            {
+                "agentphone_call_id": agentphone_call_id,
+                "conversation_id": str(conv_id),
+                "to_number": to_number,
+                "direction": "outbound",
+                "started_at": started_at.isoformat() if started_at else _now_iso(),
+            },
+        )
+        return UUID(call["id"])
+
     sql = """
         INSERT INTO calls (agentphone_call_id, conversation_id, to_number, direction, started_at)
         VALUES ($1, $2, $3, 'outbound', COALESCE($4, now()))
@@ -216,6 +356,21 @@ async def finalize_call(
     user_sentiment: str | None,
     transcript: list[dict[str, Any]] | None,
 ) -> None:
+    if not db.available():
+        _fallback_update_first(
+            "calls",
+            lambda item: item.get("agentphone_call_id") == agentphone_call_id,
+            {
+                "duration_seconds": duration_seconds,
+                "disconnection_reason": disconnection_reason,
+                "summary": summary,
+                "user_sentiment": user_sentiment,
+                "transcript": transcript,
+                "ended_at": _now_iso(),
+            },
+        )
+        return
+
     import json
     sql = """
         UPDATE calls SET
@@ -240,6 +395,26 @@ async def finalize_call(
 
 
 async def list_conversations(limit: int = 100) -> list[dict[str, Any]]:
+    if not db.available():
+        store = _load_browser_store()
+        messages = store["messages"]
+        calls = store["calls"]
+        rows = []
+        for conv in reversed(store["conversations"][-limit:]):
+            conv_messages = [item for item in messages if item["conversation_id"] == conv["id"]]
+            conv_calls = [item for item in calls if item.get("conversation_id") == conv["id"]]
+            last = conv_messages[-1] if conv_messages else {}
+            rows.append(
+                {
+                    **conv,
+                    "last_message": last.get("body"),
+                    "last_direction": last.get("direction"),
+                    "message_count": len(conv_messages),
+                    "call_count": len(conv_calls),
+                }
+            )
+        return rows
+
     sql = """
         SELECT c.id, c.phone, c.display_name, c.last_message_at, c.created_at,
           (SELECT body FROM messages m WHERE m.conversation_id = c.id
@@ -258,6 +433,10 @@ async def list_conversations(limit: int = 100) -> list[dict[str, Any]]:
 
 
 async def get_conversation_by_phone(phone: str) -> dict[str, Any] | None:
+    if not db.available():
+        store = _load_browser_store()
+        return next((item for item in store["conversations"] if item["phone"] == phone), None)
+
     sql = "SELECT * FROM conversations WHERE phone = $1"
     async with db.pool().acquire() as conn:
         row = await conn.fetchrow(sql, phone)
@@ -265,6 +444,11 @@ async def get_conversation_by_phone(phone: str) -> dict[str, Any] | None:
 
 
 async def list_messages(conversation_id: UUID, limit: int = 500) -> list[dict[str, Any]]:
+    if not db.available():
+        store = _load_browser_store()
+        wanted = str(conversation_id)
+        return [item for item in store["messages"] if item["conversation_id"] == wanted][:limit]
+
     sql = """
         SELECT id, agentphone_id, direction, body, channel, from_number, to_number, created_at
         FROM messages
@@ -278,6 +462,9 @@ async def list_messages(conversation_id: UUID, limit: int = 500) -> list[dict[st
 
 
 async def list_calls(limit: int = 100) -> list[dict[str, Any]]:
+    if not db.available():
+        return list(reversed(_load_browser_store()["calls"][-limit:]))
+
     sql = """
         SELECT id, agentphone_call_id, conversation_id, to_number, direction,
                duration_seconds, disconnection_reason, summary, user_sentiment,
@@ -292,6 +479,10 @@ async def list_calls(limit: int = 100) -> list[dict[str, Any]]:
 
 
 async def list_calls_for_conversation(conversation_id: UUID) -> list[dict[str, Any]]:
+    if not db.available():
+        wanted = str(conversation_id)
+        return [item for item in _load_browser_store()["calls"] if item.get("conversation_id") == wanted]
+
     sql = """
         SELECT id, agentphone_call_id, to_number, direction, duration_seconds,
                disconnection_reason, summary, user_sentiment, transcript,
@@ -311,7 +502,7 @@ async def list_calls_for_conversation(conversation_id: UUID) -> list[dict[str, A
 
 
 async def create_job_from_import(imported_fields: dict[str, Any]) -> dict[str, Any]:
-    if not db.available():
+    if USE_LOCAL_WORKFLOW_STORE or not db.available():
         return _fallback_create_job(imported_fields)
 
     sql = """
@@ -339,12 +530,48 @@ async def create_job_from_import(imported_fields: dict[str, Any]) -> dict[str, A
 
 
 async def get_job(job_id: UUID) -> dict[str, Any] | None:
-    if not db.available():
+    if USE_LOCAL_WORKFLOW_STORE or not db.available():
         return _fallback_get_job(job_id)
 
     sql = "SELECT * FROM jobs WHERE id = $1"
     async with db.pool().acquire() as conn:
         row = await conn.fetchrow(sql, job_id)
+    return _record_to_dict(row) if row else None
+
+
+async def list_jobs(limit: int = 100) -> list[dict[str, Any]]:
+    if USE_LOCAL_WORKFLOW_STORE or not db.available():
+        return _fallback_list_jobs(limit=limit)
+
+    sql = "SELECT * FROM jobs ORDER BY created_at DESC LIMIT $1"
+    async with db.pool().acquire() as conn:
+        rows = await conn.fetch(sql, limit)
+    return [_record_to_dict(r) for r in rows]
+
+
+async def update_job(job_id: UUID | str, **updates: Any) -> dict[str, Any] | None:
+    if USE_LOCAL_WORKFLOW_STORE or not db.available():
+        return _fallback_update_job(job_id, updates)
+
+    allowed = {
+        "business_name",
+        "role",
+        "description",
+        "location",
+        "start_time",
+        "end_time",
+        "pay_amount",
+        "urgency",
+        "required_skills",
+        "status",
+    }
+    filtered = {key: value for key, value in updates.items() if key in allowed}
+    if not filtered:
+        return await get_job(UUID(str(job_id)))
+    assignments = ", ".join(f"{key} = ${idx + 2}" for idx, key in enumerate(filtered))
+    sql = f"UPDATE jobs SET {assignments} WHERE id = $1 RETURNING *"
+    async with db.pool().acquire() as conn:
+        row = await conn.fetchrow(sql, UUID(str(job_id)), *filtered.values())
     return _record_to_dict(row) if row else None
 
 
@@ -360,7 +587,7 @@ async def create_browser_source(
     update_status: str,
     browser_action_log: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    if not db.available():
+    if USE_LOCAL_WORKFLOW_STORE or not db.available():
         return _fallback_create_browser_source(
             job_id=job_id,
             source_url=source_url,
@@ -398,7 +625,7 @@ async def create_browser_source(
 
 
 async def get_browser_source(source_id: UUID) -> dict[str, Any] | None:
-    if not db.available():
+    if USE_LOCAL_WORKFLOW_STORE or not db.available():
         return _fallback_get_browser_source(source_id)
 
     sql = "SELECT * FROM browser_sources WHERE id = $1"
@@ -408,7 +635,7 @@ async def get_browser_source(source_id: UUID) -> dict[str, Any] | None:
 
 
 async def list_browser_sources(limit: int = 50) -> list[dict[str, Any]]:
-    if not db.available():
+    if USE_LOCAL_WORKFLOW_STORE or not db.available():
         return _fallback_list_browser_sources(limit=limit)
 
     sql = """
@@ -424,7 +651,7 @@ async def list_browser_sources(limit: int = 50) -> list[dict[str, Any]]:
 
 
 async def list_browser_sources_for_job(job_id: UUID | str) -> list[dict[str, Any]]:
-    if not db.available():
+    if USE_LOCAL_WORKFLOW_STORE or not db.available():
         return _fallback_list_browser_sources_for_job(job_id)
 
     sql = """
@@ -436,3 +663,210 @@ async def list_browser_sources_for_job(job_id: UUID | str) -> list[dict[str, Any
     async with db.pool().acquire() as conn:
         rows = await conn.fetch(sql, job_id)
     return [_record_to_dict(r) for r in rows]
+
+
+async def create_event(
+    *,
+    job_id: UUID | str,
+    type: str,
+    content: str,
+    status: str = "complete",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _fallback_insert(
+        "events",
+        {
+            "job_id": str(job_id),
+            "type": type,
+            "content": content,
+            "status": status,
+            "metadata": metadata or {},
+        },
+    )
+
+
+async def list_events(job_id: UUID | str) -> list[dict[str, Any]]:
+    return _fallback_list("events", job_id)
+
+
+async def create_outreach(
+    *,
+    job_id: UUID | str,
+    contractor_id: str,
+    channel: str,
+    message: str,
+    status: str,
+    provider_id: str | None = None,
+    response: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _fallback_insert(
+        "outreach",
+        {
+            "job_id": str(job_id),
+            "contractor_id": contractor_id,
+            "channel": channel,
+            "message": message,
+            "status": status,
+            "provider_id": provider_id,
+            "response": response,
+            "metadata": metadata or {},
+        },
+    )
+
+
+async def list_outreach(job_id: UUID | str) -> list[dict[str, Any]]:
+    return _fallback_list("outreach", job_id)
+
+
+async def update_outreach_response(
+    *,
+    job_id: UUID | str,
+    contractor_id: str,
+    response: str,
+    status: str,
+) -> dict[str, Any] | None:
+    return _fallback_update_first(
+        "outreach",
+        lambda item: str(item.get("job_id")) == str(job_id)
+        and item.get("contractor_id") == contractor_id
+        and item.get("channel") in {"sms", "call"},
+        {"response": response, "status": status},
+    )
+
+
+async def create_schedule(
+    *,
+    job_id: UUID | str,
+    contractor_id: str,
+    start_time: str,
+    end_time: str,
+    status: str = "confirmed",
+) -> dict[str, Any]:
+    existing = _fallback_update_first(
+        "schedules",
+        lambda item: str(item.get("job_id")) == str(job_id),
+        {
+            "contractor_id": contractor_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "status": status,
+        },
+    )
+    if existing:
+        return existing
+    return _fallback_insert(
+        "schedules",
+        {
+            "job_id": str(job_id),
+            "contractor_id": contractor_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "status": status,
+        },
+    )
+
+
+async def list_schedules(job_id: UUID | str) -> list[dict[str, Any]]:
+    return _fallback_list("schedules", job_id)
+
+
+async def upsert_payment(
+    *,
+    job_id: UUID | str,
+    contractor_id: str | None,
+    amount: float,
+    status: str,
+    release_conditions: list[dict[str, Any]],
+    provider_state: dict[str, Any] | None = None,
+    receipt_url: str | None = None,
+) -> dict[str, Any]:
+    updates = {
+        "contractor_id": contractor_id,
+        "amount": amount,
+        "status": status,
+        "release_conditions": release_conditions,
+        "provider_state": provider_state or {},
+        "receipt_url": receipt_url,
+    }
+    existing = _fallback_update_first(
+        "payments",
+        lambda item: str(item.get("job_id")) == str(job_id),
+        updates,
+    )
+    if existing:
+        return existing
+    return _fallback_insert("payments", {"job_id": str(job_id), **updates})
+
+
+async def get_payment(job_id: UUID | str) -> dict[str, Any] | None:
+    payments = _fallback_list("payments", job_id)
+    return payments[-1] if payments else None
+
+
+async def create_proof(
+    *,
+    job_id: UUID | str,
+    contractor_id: str,
+    type: str,
+    content_url: str | None,
+    status: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _fallback_insert(
+        "proofs",
+        {
+            "job_id": str(job_id),
+            "contractor_id": contractor_id,
+            "type": type,
+            "content_url": content_url,
+            "status": status,
+            "metadata": metadata or {},
+        },
+    )
+
+
+async def list_proofs(job_id: UUID | str) -> list[dict[str, Any]]:
+    return _fallback_list("proofs", job_id)
+
+
+async def create_notification(
+    *,
+    job_id: UUID | str,
+    channel: str,
+    recipient: str,
+    subject: str,
+    body: str,
+    status: str,
+    provider_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _fallback_insert(
+        "notifications",
+        {
+            "job_id": str(job_id),
+            "channel": channel,
+            "recipient": recipient,
+            "subject": subject,
+            "body": body,
+            "status": status,
+            "provider_id": provider_id,
+            "metadata": metadata or {},
+        },
+    )
+
+
+async def list_notifications(job_id: UUID | str) -> list[dict[str, Any]]:
+    return _fallback_list("notifications", job_id)
+
+
+async def update_browser_source_status(
+    *,
+    job_id: UUID | str,
+    update_status: str,
+) -> dict[str, Any] | None:
+    return _fallback_update_first(
+        "browser_sources",
+        lambda item: str(item.get("job_id")) == str(job_id),
+        {"update_status": update_status},
+    )

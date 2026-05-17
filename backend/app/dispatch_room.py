@@ -1,14 +1,16 @@
 from typing import Any
 
-
 CONTRACTORS = [
     {
-        "id": "maya",
-        "name": "Maya Chen",
-        "initials": "MC",
+        "id": "emma",
+        "name": "Emma Carter",
+        "initials": "EC",
+        "profile_image_url": "/static/portraits/emma-carter.jpg",
         "phone": "+14155550118",
-        "email": "maya@example.com",
+        "email": "emma@example.com",
         "skills": ["bartending", "event experience", "guest service", "food safety"],
+        "capabilities": ["high-volume bar", "cocktail batching", "guest service", "food safety"],
+        "can_do": "Can run the bar solo, batch cocktails, manage guest-facing service, and close with food-safety standards.",
         "distance_miles": 2.1,
         "reliability_score": 98,
         "response_speed": "4 min",
@@ -17,12 +19,15 @@ CONTRACTORS = [
         "notes": "Prefers evening event work. Accepted last 5 urgent shifts.",
     },
     {
-        "id": "chris",
-        "name": "Chris Patel",
-        "initials": "CP",
+        "id": "madison",
+        "name": "Madison Reed",
+        "initials": "MR",
+        "profile_image_url": "/static/portraits/madison-reed.jpg",
         "phone": "+14155550142",
-        "email": "chris@example.com",
+        "email": "madison@example.com",
         "skills": ["bartending", "barback", "private events"],
+        "capabilities": ["barback support", "private events", "beer and wine", "setup"],
+        "can_do": "Can support a staffed bar, handle beer and wine service, prep stations, and reset private events.",
         "distance_miles": 4.8,
         "reliability_score": 61,
         "response_speed": "18 min",
@@ -31,12 +36,15 @@ CONTRACTORS = [
         "notes": "Skill match, but two late check-ins in prior month.",
     },
     {
-        "id": "priya",
-        "name": "Priya Shah",
-        "initials": "PS",
+        "id": "ashley",
+        "name": "Ashley Brooks",
+        "initials": "AB",
+        "profile_image_url": "/static/portraits/ashley-brooks.jpg",
         "phone": "+14155550173",
-        "email": "priya@example.com",
+        "email": "ashley@example.com",
         "skills": ["server", "event experience", "guest service"],
+        "capabilities": ["tray pass", "check-in desk", "guest service", "event support"],
+        "can_do": "Can cover guest check-in, tray pass, event support, and front-of-house service.",
         "distance_miles": 3.4,
         "reliability_score": 91,
         "response_speed": "7 min",
@@ -48,9 +56,12 @@ CONTRACTORS = [
         "id": "luis",
         "name": "Luis Romero",
         "initials": "LR",
+        "profile_image_url": "/static/portraits/luis-romero.jpg",
         "phone": "+14155550194",
         "email": "luis@example.com",
         "skills": ["moving", "setup crew", "driver"],
+        "capabilities": ["load-in", "venue setup", "driving", "strike crew"],
+        "can_do": "Can handle load-in, venue setup, driving runs, and end-of-night strike crew.",
         "distance_miles": 1.6,
         "reliability_score": 94,
         "response_speed": "6 min",
@@ -61,23 +72,41 @@ CONTRACTORS = [
 ]
 
 
-def build_dispatch_payload(job: dict[str, Any], browser_sources: list[dict[str, Any]]) -> dict[str, Any]:
-    contractors = _rank_contractors(job)
+def build_dispatch_payload(
+    job: dict[str, Any],
+    browser_sources: list[dict[str, Any]],
+    *,
+    events: list[dict[str, Any]] | None = None,
+    outreach: list[dict[str, Any]] | None = None,
+    schedules: list[dict[str, Any]] | None = None,
+    payment: dict[str, Any] | None = None,
+    proofs: list[dict[str, Any]] | None = None,
+    notifications: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    contractors = rank_contractors(job)
     top = contractors[0] if contractors else None
     browser_source = browser_sources[0] if browser_sources else None
+    events = events or []
+    outreach = outreach or []
+    schedules = schedules or []
+    proofs = proofs or []
+    notifications = notifications or []
 
     return {
         "job": job,
         "contractors": contractors,
-        "timeline": _timeline(job, browser_source, top),
-        "payment": _payment(job),
-        "proof": _proof(job),
-        "owner_summary": _owner_summary(job, top),
+        "timeline": _timeline(job, browser_source, top, events),
+        "outreach": outreach,
+        "schedules": schedules,
+        "payment": _payment(job, payment),
+        "proof": _proof(job, proofs),
+        "owner_summary": _owner_summary(job, top, schedules, payment, proofs, notifications),
         "web_source": browser_source,
+        "notifications": notifications,
     }
 
 
-def _rank_contractors(job: dict[str, Any]) -> list[dict[str, Any]]:
+def rank_contractors(job: dict[str, Any]) -> list[dict[str, Any]]:
     role = str(job.get("role") or "").lower()
     role_aliases = {
         "bartender": {"bartender", "bartending", "barback"},
@@ -108,7 +137,14 @@ def _rank_contractors(job: dict[str, Any]) -> list[dict[str, Any]]:
         else:
             status = "mismatch"
 
-        ranked.append({**contractor, "match_score": score, "status": status})
+        ranked.append(
+            {
+                **contractor,
+                "match_score": score,
+                "status": status,
+                "memory_source": "seeded_moss_memory",
+            }
+        )
 
     return sorted(ranked, key=lambda item: item["match_score"], reverse=True)
 
@@ -117,7 +153,19 @@ def _timeline(
     job: dict[str, Any],
     browser_source: dict[str, Any] | None,
     top_contractor: dict[str, Any] | None,
+    events: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    if events:
+        return [
+            {
+                "label": _event_label(event.get("type", "event")),
+                "detail": event.get("content") or "",
+                "status": event.get("status") or "complete",
+                "time": event.get("created_at", "now"),
+            }
+            for event in events
+        ]
+
     source_name = "Bay Events staffing page"
     if browser_source:
         source_name = browser_source.get("source_url") or source_name
@@ -175,7 +223,16 @@ def _timeline(
     ]
 
 
-def _payment(job: dict[str, Any]) -> dict[str, Any]:
+def _payment(job: dict[str, Any], payment: dict[str, Any] | None = None) -> dict[str, Any]:
+    if payment:
+        return {
+            "amount": float(payment.get("amount") or job.get("pay_amount") or 0),
+            "status": payment.get("status") or "pending",
+            "provider": "Sponge rules + Stripe payment state",
+            "release_conditions": payment.get("release_conditions") or [],
+            "provider_state": payment.get("provider_state") or {},
+            "receipt_url": payment.get("receipt_url"),
+        }
     return {
         "amount": float(job.get("pay_amount") or 0),
         "status": "pending",
@@ -189,7 +246,20 @@ def _payment(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _proof(job: dict[str, Any]) -> dict[str, Any]:
+def _proof(job: dict[str, Any], proofs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    proofs = proofs or []
+    if proofs:
+        return {
+            "status": "received",
+            "items": [
+                {
+                    "type": proof.get("type", "proof"),
+                    "status": proof.get("status", "received"),
+                    "detail": proof.get("content_url") or proof.get("metadata", {}).get("content") or "Proof captured",
+                }
+                for proof in proofs
+            ],
+        }
     return {
         "status": "awaiting contractor",
         "items": [
@@ -201,19 +271,54 @@ def _proof(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _owner_summary(job: dict[str, Any], top_contractor: dict[str, Any] | None) -> dict[str, Any]:
+def _owner_summary(
+    job: dict[str, Any],
+    top_contractor: dict[str, Any] | None,
+    schedules: list[dict[str, Any]],
+    payment: dict[str, Any] | None,
+    proofs: list[dict[str, Any]],
+    notifications: list[dict[str, Any]],
+) -> dict[str, Any]:
     top_name = top_contractor["name"] if top_contractor else "No recommendation yet"
+    assigned = job.get("assigned_contractor_id")
+    confirmed = "Pending acceptance"
+    if assigned:
+        match = next((contractor for contractor in CONTRACTORS if contractor["id"] == assigned), None)
+        confirmed = match["name"] if match else assigned
     eta = "18 min" if top_contractor else "pending"
+    payment_status = payment.get("status") if payment else "Pending hold"
     return {
         "business_name": job.get("business_name"),
-        "confirmed_contractor": "Pending acceptance",
+        "confirmed_contractor": confirmed,
         "recommended_contractor": top_name,
-        "eta": eta,
+        "eta": "scheduled" if schedules else eta,
         "pay": float(job.get("pay_amount") or 0),
-        "proof": "Required before release",
-        "payment_status": "Pending hold",
+        "proof": "Received" if proofs else "Required before release",
+        "payment_status": payment_status,
+        "notifications_sent": len(notifications),
         "message": (
-            f"{top_name} is the strongest match for the {job.get('role')} shift in "
-            f"{job.get('location')}. Outreach is ready."
+            f"{confirmed if assigned else top_name} is "
+            f"{'confirmed' if assigned else 'the strongest match'} for the {job.get('role')} shift in "
+            f"{job.get('location')}."
         ),
     }
+
+
+def _event_label(event_type: str) -> str:
+    return {
+        "source_imported": "Source imported",
+        "request_parsed": "Request parsed",
+        "clarification_needed": "Clarification needed",
+        "contractor_matched": "Contractor matched",
+        "text_sent": "Text sent",
+        "call_placed": "Call placed",
+        "contractor_accepted": "Contractor accepted",
+        "contractor_declined": "Contractor declined",
+        "schedule_created": "Schedule created",
+        "payment_held": "Payment held",
+        "proof_received": "Proof received",
+        "payment_released": "Payment released",
+        "payment_blocked": "Payment blocked",
+        "email_sent": "Email sent",
+        "browser_synced": "Browser synced",
+    }.get(event_type, event_type.replace("_", " ").title())

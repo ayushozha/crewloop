@@ -7,6 +7,7 @@ from .. import ai, repo
 from ..agentphone import get_client
 from ..config import settings
 from ..signature import verify_webhook
+from ..workflow import handle_contractor_message
 
 
 logger = logging.getLogger("crewloop.webhooks")
@@ -42,6 +43,53 @@ async def agentphone_webhook(
     return {}
 
 
+@router.post("/agentmail")
+async def agentmail_webhook(request: Request) -> dict[str, Any]:
+    payload = await request.json()
+    event = payload.get("event") or payload.get("type") or "agentmail.event"
+    data = payload.get("data") or payload
+    job_id = data.get("job_id") or data.get("metadata", {}).get("job_id")
+    if job_id:
+        await repo.create_event(
+            job_id=job_id,
+            type="email_sent" if "sent" in event else "email_event",
+            content=f"AgentMail webhook received: {event}",
+            metadata={"payload": payload},
+        )
+    return {"ok": True}
+
+
+@router.post("/stripe")
+async def stripe_webhook(request: Request) -> dict[str, Any]:
+    payload = await request.json()
+    event = payload.get("type") or "stripe.event"
+    data = payload.get("data", {}).get("object", {}) if isinstance(payload.get("data"), dict) else {}
+    job_id = data.get("metadata", {}).get("job_id") or payload.get("job_id")
+    if job_id:
+        await repo.create_event(
+            job_id=job_id,
+            type="stripe_event",
+            content=f"Stripe webhook received: {event}",
+            metadata={"payload": payload},
+        )
+    return {"ok": True}
+
+
+@router.post("/sponge")
+async def sponge_webhook(request: Request) -> dict[str, Any]:
+    payload = await request.json()
+    event = payload.get("event") or payload.get("type") or "sponge.event"
+    job_id = payload.get("job_id") or payload.get("metadata", {}).get("job_id")
+    if job_id:
+        await repo.create_event(
+            job_id=job_id,
+            type="sponge_event",
+            content=f"Sponge webhook received: {event}",
+            metadata={"payload": payload},
+        )
+    return {"ok": True}
+
+
 async def _handle_sms(data: dict) -> dict[str, Any]:
     direction = data.get("direction") or "inbound"
     msg_from = data.get("from") or ""
@@ -71,6 +119,14 @@ async def _handle_sms(data: dict) -> dict[str, Any]:
 
     # Only auto-reply on a fresh inbound (skips webhook retries and our own outbound echoes).
     if direction == "inbound" and new_row_id is not None and contractor_phone:
+        try:
+            workflow_result = await handle_contractor_message(contractor_phone, body)
+        except Exception:
+            logger.exception("failed to apply contractor SMS to workflow")
+            workflow_result = None
+        if workflow_result and workflow_result.get("intent") in {"accept", "decline", "check_in"}:
+            return {}
+
         try:
             reply = await ai.generate_sms_reply(contractor_phone)
         except Exception:

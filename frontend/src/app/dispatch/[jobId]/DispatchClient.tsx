@@ -5,11 +5,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import { BrandMark } from "@/components/Brand";
 import type { DispatchContractor, DispatchPayload, DispatchTimelineEvent } from "@/lib/api";
-import { api } from "@/lib/api";
+import { API_BASE_URL, api } from "@/lib/api";
 
 const money = (v: number | string | null | undefined) =>
   `$${Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const cap = (v: string | undefined) => (v ? v.charAt(0).toUpperCase() + v.slice(1) : "");
+const assetUrl = (src: string) =>
+  src.startsWith("http") ? src : `${API_BASE_URL}${src.startsWith("/") ? "" : "/"}${src}`;
 
 type ChipTone = "default" | "green" | "red" | "amber" | "blue";
 
@@ -59,7 +61,10 @@ export function DispatchClient({ jobId }: { jobId: string }) {
   }, [jobId]);
 
   useEffect(() => {
-    load();
+    const id = setTimeout(() => {
+      void load();
+    }, 0);
+    return () => clearTimeout(id);
   }, [load]);
 
   const doAction = async (
@@ -293,12 +298,18 @@ function ContractorCard({ contractors }: { contractors: DispatchContractor[] }) 
         {contractors.map((c) => (
           <div
             key={c.name}
-            className={`grid grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 border-b border-line-2 px-4 py-3.5 last:border-b-0 ${
+            className={`grid grid-cols-[64px_minmax(0,1fr)_auto] items-start gap-3.5 border-b border-line-2 px-4 py-4 last:border-b-0 ${
               c.status === "recommended" ? "bg-[rgba(47,111,78,0.08)]" : ""
             }`}
           >
-            <div className="grid h-10 w-10 place-items-center rounded-full bg-[#E8E1D4] text-[13px] font-extrabold text-[#514A3E]">
-              {c.initials}
+            <div className="grid h-16 w-16 place-items-center overflow-hidden rounded-2xl border border-line bg-[#E8E1D4] text-[13px] font-extrabold text-[#514A3E]">
+              {c.profile_image_url ? (
+                // Dynamic backend-hosted API assets do not go through Next image optimization.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={assetUrl(c.profile_image_url)} alt={`${c.name} profile`} className="h-full w-full object-cover object-[center_28%]" />
+              ) : (
+                c.initials
+              )}
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2 font-extrabold">
@@ -308,6 +319,14 @@ function ContractorCard({ contractors }: { contractors: DispatchContractor[] }) 
               <div className="mt-1 break-words text-[12.5px] text-muted">
                 {(c.skills || []).join(", ")} · {c.distance_miles} mi · {c.reliability_score}% reliability ·{" "}
                 {c.response_speed} · {c.memory_source || "seeded_moss_memory"}
+              </div>
+              {c.can_do && <div className="mt-2 text-[13px] leading-snug text-ink-2">{c.can_do}</div>}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(c.capabilities || c.skills || []).map((item) => (
+                  <span key={item} className="rounded-full bg-[#EFEAE0] px-2 py-1 text-[11.5px] font-bold text-[#514A3E]">
+                    {item}
+                  </span>
+                ))}
               </div>
             </div>
             <div className="text-right font-mono text-[18px] font-bold">

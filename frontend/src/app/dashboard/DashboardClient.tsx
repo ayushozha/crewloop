@@ -72,9 +72,15 @@ export function DashboardClient() {
   }, [fetchConversations, fetchThread, selectedPhone]);
 
   useEffect(() => {
-    tick();
-    const id = setInterval(tick, 5000);
-    return () => clearInterval(id);
+    const run = () => {
+      void tick();
+    };
+    const initialId = setTimeout(run, 0);
+    const intervalId = setInterval(run, 5000);
+    return () => {
+      clearTimeout(initialId);
+      clearInterval(intervalId);
+    };
   }, [tick]);
 
   const items = useMemo<ThreadItem[]>(() => {

@@ -89,6 +89,34 @@ CREATE TABLE IF NOT EXISTS browser_sources (
 
 CREATE INDEX IF NOT EXISTS browser_sources_job_idx ON browser_sources (job_id);
 CREATE INDEX IF NOT EXISTS browser_sources_created_at_idx ON browser_sources (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS contractors (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name              text NOT NULL,
+  phone             text NOT NULL UNIQUE,
+  email             text,
+  age               integer,
+  location          text NOT NULL,
+  distance_miles    numeric(4,1),
+  hourly_rate       numeric(6,2) NOT NULL,
+  reliability_score integer NOT NULL CHECK (reliability_score BETWEEN 0 AND 100),
+  response_speed    text NOT NULL,
+  languages         text[] NOT NULL DEFAULT '{}',
+  certifications    text[] NOT NULL DEFAULT '{}',
+  notes             text,
+  avatar_path       text,
+  created_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS contractors_reliability_idx ON contractors (reliability_score DESC);
+
+CREATE TABLE IF NOT EXISTS contractor_skills (
+  contractor_id uuid REFERENCES contractors(id) ON DELETE CASCADE,
+  skill         text NOT NULL,
+  PRIMARY KEY (contractor_id, skill)
+);
+
+CREATE INDEX IF NOT EXISTS contractor_skills_skill_idx ON contractor_skills (skill);
 """
 
 

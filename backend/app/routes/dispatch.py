@@ -24,4 +24,13 @@ async def get_dispatch_room(job_id: UUID) -> dict[str, Any]:
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
     sources = await repo.list_browser_sources_for_job(job_id)
-    return build_dispatch_payload(job, sources)
+    return build_dispatch_payload(
+        job,
+        sources,
+        events=await repo.list_events(job_id),
+        outreach=await repo.list_outreach(job_id),
+        schedules=await repo.list_schedules(job_id),
+        payment=await repo.get_payment(job_id),
+        proofs=await repo.list_proofs(job_id),
+        notifications=await repo.list_notifications(job_id),
+    )

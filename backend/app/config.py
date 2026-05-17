@@ -25,6 +25,22 @@ class Settings(BaseSettings):
     browser_use_base_url: str = "https://api.browser-use.com/api/v3"
     browser_use_model: str = "bu-mini"
 
+    agentmail_api_key: str | None = None
+    agentmail_base_url: str = "https://api.agentmail.to/v0"
+    agentmail_inbox_name: str = "CallMyAgent"
+    agentmail_inbox_id: str | None = None
+    owner_email: str = "owner@example.com"
+
+    moss_project_id: str | None = None
+    moss_project_key: str | None = None
+    moss_base_url: str = "https://service.usemoss.dev/v1"
+    moss_contractors_index: str = "contractors"
+
+    sponge_api_key: str | None = None
+    sponge_mcp_api_key: str | None = None
+    sponge_mcp_url: str = "https://api.wallet.paysponge.com/mcp"
+    stripe_api_key: str | None = None
+
     database_url: str = (
         "postgres://admin:i87RfJUBx5HZJuykZt4v9u3zaq10wAqV@localhost:5433/crewloop?sslmode=disable"
     )

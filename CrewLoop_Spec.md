@@ -142,7 +142,7 @@ Keep real credentials in local environment files only. The repo should document 
 
 ```text
 Emma - bartender - 98% reliability - 2 miles away - recommended
-Chris - bartender - 61% reliability - backup
+Madison - bartender - 61% reliability - backup
 Luis - server - skill mismatch
 ```
 
@@ -614,7 +614,7 @@ Closing:
 ### Hour 0-1: Lock demo and data
 
 - Create Bay Events Co. fake business.
-- Create contractor roster: Emma, Chris, Luis, Priya.
+- Create contractor roster: Emma, Madison, Luis, Ashley.
 - Create one urgent bartender job.
 - Write contractor call/SMS scripts.
 

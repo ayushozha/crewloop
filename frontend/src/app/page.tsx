@@ -196,9 +196,9 @@ interface MatchRow {
 
 const MATCH_ROWS: MatchRow[] = [
   { initial: "E", name: "Emma Carter", meta: "2.1 mi · 98% reliable · $30/hr", pill: "Texting", variant: "featured", pillVariant: "green", avAccent: true },
-  { initial: "C", name: "Chris Patel", meta: "3.4 mi · 61% reliable · $28/hr", pill: "Backup", variant: "default", pillVariant: "dim" },
+  { initial: "M", name: "Madison Reed", meta: "3.4 mi · 61% reliable · $28/hr", pill: "Backup", variant: "default", pillVariant: "dim" },
   { initial: "L", name: "Luis Romero", meta: "Server · skill mismatch", pill: "Skipped", variant: "default", pillVariant: "dim" },
-  { initial: "P", name: "Priya Shah", meta: "Unavailable tonight", pill: "—", variant: "default", pillVariant: "dim" },
+  { initial: "A", name: "Ashley Brooks", meta: "Unavailable tonight", pill: "—", variant: "default", pillVariant: "dim" },
 ];
 
 function MatchCard() {

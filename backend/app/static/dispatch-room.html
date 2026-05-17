@@ -54,6 +54,7 @@
   }
   .sub{color:var(--muted);margin:0;max-width:72ch}
   .status-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+  .workflow-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:10px}
   .chip{
     display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
     font:500 11px/1 "Geist Mono", ui-monospace, monospace;text-transform:uppercase;letter-spacing:.08em;
@@ -88,15 +89,19 @@
 
   .contractors{display:grid}
   .contractor{
-    display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:12px;align-items:center;
-    padding:13px 16px;border-bottom:1px solid var(--line-2);
+    display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:14px;align-items:start;
+    padding:16px;border-bottom:1px solid var(--line-2);
   }
   .contractor:last-child{border-bottom:0}
-  .avatar{width:40px;height:40px;border-radius:999px;background:#E8E1D4;color:#514A3E;display:grid;place-items:center;font-weight:800;font-size:13px}
+  .avatar{width:64px;height:64px;border-radius:16px;background:#E8E1D4;color:#514A3E;display:grid;place-items:center;font-weight:800;font-size:13px;overflow:hidden;border:1px solid var(--line)}
+  .avatar img{width:100%;height:100%;object-fit:cover;object-position:center 28%;display:block}
   .contractor.recommended{background:linear-gradient(0deg, rgba(47,111,78,.08), rgba(47,111,78,.08))}
   .contractor-main{min-width:0}
   .contractor-name{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:800}
   .contractor-meta{color:var(--muted);font-size:12.5px;margin-top:4px;overflow-wrap:anywhere}
+  .can-do{margin-top:8px;color:var(--ink-2);font-size:13px;line-height:1.35}
+  .capabilities{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .capability{display:inline-flex;align-items:center;border-radius:999px;background:#EFEAE0;color:#514A3E;padding:5px 8px;font-size:11.5px;font-weight:700}
   .score{font:700 18px/1 "Geist Mono", ui-monospace, monospace;text-align:right}
   .score span{display:block;font-size:10px;color:var(--muted);font-weight:500;margin-top:4px;text-transform:uppercase;letter-spacing:.08em}
 
@@ -131,6 +136,7 @@
   }
   .btn.primary{background:var(--ink);border-color:var(--ink);color:white}
   .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.small{min-height:34px;padding:8px 10px;font-size:12.5px}
   .source-shot{padding:12px;border-top:1px solid var(--line-2)}
   .source-shot img{width:100%;border:1px solid var(--line);border-radius:8px;background:white;display:block}
   .source-meta{display:grid;gap:9px;padding:14px 16px;color:var(--muted);font-size:12.5px}
@@ -149,11 +155,13 @@
     .shell{padding:20px 16px 34px}
     .header{grid-template-columns:1fr}
     .status-row{justify-content:flex-start}
+    .workflow-actions{justify-content:flex-start}
     h1{font-size:34px}
     .grid,.stack.side{grid-template-columns:1fr}
     .field-grid{grid-template-columns:1fr}
     .actions{grid-template-columns:1fr}
-    .contractor{grid-template-columns:36px minmax(0,1fr)}
+    .contractor{grid-template-columns:56px minmax(0,1fr)}
+    .avatar{width:56px;height:56px;border-radius:14px}
     .score{grid-column:2;text-align:left;font-size:14px}
     .score span{display:inline;margin-left:6px}
   }
@@ -176,6 +184,7 @@
       <p id="subtitle" class="sub">Loading dispatch state…</p>
     </div>
     <div id="status-row" class="status-row"></div>
+    <div id="workflow-actions" class="workflow-actions"></div>
   </section>
   <div id="root" class="empty">Loading…</div>
 </main>
@@ -212,6 +221,7 @@
       <span class="chip green">${recommended ? esc(recommended.name) : "No match"}</span>
       <span class="chip amber">${money(job.pay_amount)}</span>
     `;
+    document.getElementById("workflow-actions").innerHTML = workflowActions(job, payment, proof);
 
     document.getElementById("root").className = "grid";
     document.getElementById("root").innerHTML = `
@@ -229,6 +239,54 @@
         ${ownerSummaryCard(owner_summary)}
       </section>
     `;
+    bindActions();
+  }
+
+  function workflowActions(job, payment, proof) {
+    const hasProof = (proof.items || []).some((item) => item.status === "received");
+    const paymentReleased = payment.status === "released";
+    return `
+      <button class="btn small primary" data-action="outreach" ${["outreach_sent","accepted","completed"].includes(job.status) ? "disabled" : ""}>${sendIcon()} Send outreach</button>
+      <button class="btn small" data-action="accept" ${job.status === "accepted" || job.status === "completed" ? "disabled" : ""}>${checkIcon()} Simulate accept</button>
+      <button class="btn small" data-action="checkin" ${!job.assigned_contractor_id || hasProof ? "disabled" : ""}>${checkIcon()} Check in</button>
+      <button class="btn small" data-action="approve" ${!hasProof || paymentReleased ? "disabled" : ""}>${checkIcon()} Approve release</button>
+    `;
+  }
+
+  function bindActions() {
+    document.querySelectorAll("[data-action]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (button.disabled) return;
+        const action = button.dataset.action;
+        button.disabled = true;
+        try {
+          if (action === "outreach") {
+            await post(`/jobs/${encodeURIComponent(jobId)}/outreach`, { send_real: false });
+          } else if (action === "accept") {
+            await post(`/jobs/${encodeURIComponent(jobId)}/accept`, { response: "yes, I can take it" });
+          } else if (action === "checkin") {
+            await post(`/jobs/${encodeURIComponent(jobId)}/check-in`, { proof_type: "sms", content: "Arrived at venue and checked in by SMS." });
+          } else if (action === "approve") {
+            await post(`/jobs/${encodeURIComponent(jobId)}/approve-release`, { owner_approved: true });
+          }
+          await load();
+        } catch (error) {
+          alert(error.message);
+          button.disabled = false;
+        }
+      });
+    });
+  }
+
+  async function post(url, body) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body || {})
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || "Action failed");
+    return payload;
   }
 
   function jobCard(job) {
@@ -261,14 +319,20 @@
         <div class="contractors">
           ${contractors.map((person) => `
             <div class="contractor ${person.status === "recommended" ? "recommended" : ""}">
-              <div class="avatar">${esc(person.initials)}</div>
+              <div class="avatar">
+                ${person.profile_image_url ? `<img src="${esc(person.profile_image_url)}" alt="${esc(person.name)} profile" />` : esc(person.initials)}
+              </div>
               <div class="contractor-main">
                 <div class="contractor-name">
                   ${esc(person.name)}
                   <span class="chip ${statusColor(person.status)}">${esc(person.status)}</span>
                 </div>
                 <div class="contractor-meta">
-                  ${esc(person.skills.join(", "))} · ${person.distance_miles} mi · ${person.reliability_score}% reliability · ${esc(person.response_speed)}
+                  ${esc(person.skills.join(", "))} · ${person.distance_miles} mi · ${person.reliability_score}% reliability · ${esc(person.response_speed)} · ${esc(person.memory_source || "seeded_moss_memory")}
+                </div>
+                <div class="can-do">${esc(person.can_do || "")}</div>
+                <div class="capabilities">
+                  ${(person.capabilities || person.skills || []).map((item) => `<span class="capability">${esc(item)}</span>`).join("")}
                 </div>
               </div>
               <div class="score">${person.match_score}<span>match</span></div>
@@ -303,6 +367,7 @@
   }
 
   function paymentCard(payment) {
+    const hasProof = (payment.release_conditions || []).some((item) => item.label === "Proof submitted" && item.complete);
     return `
       <article class="panel">
         <div class="panel-head">
@@ -323,10 +388,10 @@
             `).join("")}
           </div>
           <div class="actions">
-            <button class="btn primary">
+            <button class="btn primary" disabled>
               ${sendIcon()} Hold payment
             </button>
-            <button class="btn" disabled>
+            <button class="btn" data-action="approve" ${!hasProof || payment.status === "released" ? "disabled" : ""}>
               ${checkIcon()} Approve release
             </button>
           </div>

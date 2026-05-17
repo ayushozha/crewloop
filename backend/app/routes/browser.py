@@ -60,6 +60,17 @@ async def _create_import(source_url: str, force_local: bool) -> dict[str, Any]:
         update_status=result.update_status,
         browser_action_log=result.browser_action_log,
     )
+    await repo.create_event(
+        job_id=job["id"],
+        type="source_imported",
+        content=f"Imported shift from {result.source_url}.",
+        metadata={"browser_source_id": browser_source["id"], "used_browser_use": result.used_browser_use},
+    )
+    await repo.create_event(
+        job_id=job["id"],
+        type="request_parsed",
+        content=f"Parsed {job['role']} shift in {job['location']}.",
+    )
     return {
         "job": job,
         "browser_source": browser_source,
@@ -85,13 +96,3 @@ async def get_browser_source(source_id: UUID) -> dict[str, Any]:
     if not source:
         raise HTTPException(status_code=404, detail="browser source not found")
     return {"browser_source": source}
-
-
-@router.get("/jobs/{job_id}")
-@router.get("/api/jobs/{job_id}")
-async def get_job(job_id: UUID) -> dict[str, Any]:
-    job = await repo.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="job not found")
-    sources = await repo.list_browser_sources_for_job(job_id)
-    return {"job": job, "browser_sources": sources}
