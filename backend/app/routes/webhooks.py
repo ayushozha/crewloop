@@ -3,6 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
+from .. import repo
 from ..config import settings
 from ..signature import verify_webhook
 
@@ -25,28 +26,49 @@ async def agentphone_webhook(
     payload = await request.json()
     event = payload.get("event")
     channel = payload.get("channel")
-    data = payload.get("data", {})
+    data = payload.get("data", {}) or {}
 
     if event == "agent.message" and channel == "sms":
-        logger.info(
-            "inbound SMS from %s to %s: %s",
-            data.get("from"), data.get("to"), data.get("message"),
-        )
-        # Contractor reply parsing + dispatch state update will hang off here.
+        from_n = data.get("from") or ""
+        to_n = data.get("to") or ""
+        message = data.get("message") or ""
+        logger.info("inbound SMS from %s to %s: %s", from_n, to_n, message)
+        try:
+            await repo.record_message(
+                phone=from_n,
+                direction="inbound",
+                body=message,
+                agentphone_id=data.get("id") or data.get("messageId"),
+                from_number=from_n,
+                to_number=to_n,
+            )
+        except Exception:
+            logger.exception("failed to persist inbound SMS")
         return {}
 
     if event == "agent.message" and channel == "voice":
-        # Voice-turn webhook: only fires for voiceMode="webhook" agents.
-        # Our agent uses hosted mode, so this is a no-op fallback.
+        # Hosted-mode agents don't use this webhook for voice turns. Kept as a fallback.
         transcript = data.get("transcript", "")
         logger.info("voice turn: %s", transcript)
         return {"text": "One moment."}
 
     if event == "agent.call_ended":
+        call_id = data.get("callId") or data.get("id") or ""
         logger.info(
             "call_ended id=%s duration=%ss reason=%s",
-            data.get("callId"), data.get("durationSeconds"), data.get("disconnectionReason"),
+            call_id, data.get("durationSeconds"), data.get("disconnectionReason"),
         )
+        try:
+            await repo.finalize_call(
+                agentphone_call_id=call_id,
+                duration_seconds=data.get("durationSeconds"),
+                disconnection_reason=data.get("disconnectionReason"),
+                summary=data.get("summary"),
+                user_sentiment=data.get("userSentiment"),
+                transcript=data.get("transcript"),
+            )
+        except Exception:
+            logger.exception("failed to persist call_ended")
         return {}
 
     logger.warning("unhandled webhook event=%s channel=%s", event, channel)

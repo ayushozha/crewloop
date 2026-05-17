@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from .. import repo
 from ..agentphone import AgentPhoneError, get_client
 
 
+logger = logging.getLogger("crewloop.calls")
 router = APIRouter(prefix="/api/calls", tags=["calls"])
 
 
@@ -23,4 +27,13 @@ async def place_call(payload: PlaceCallRequest) -> dict:
         )
     except AgentPhoneError as e:
         raise HTTPException(status_code=502, detail={"agentphone_status": e.status, "body": e.body})
+
+    try:
+        await repo.record_call(
+            to_number=payload.to,
+            agentphone_call_id=result.get("id") or result.get("callId"),
+        )
+    except Exception:
+        logger.exception("failed to persist placed call")
+
     return result

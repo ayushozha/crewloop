@@ -21,5 +21,13 @@ class Settings(BaseSettings):
     agentphone_webhook_secret: str | None = None
     agentphone_webhook_url: str = "https://crewloop-api.ayushojha.com/webhooks/agentphone"
 
+    browser_use_api_key: str | None = None
+    browser_use_base_url: str = "https://api.browser-use.com/api/v3"
+    browser_use_model: str = "bu-mini"
+
+    database_url: str = (
+        "postgres://admin:i87RfJUBx5HZJuykZt4v9u3zaq10wAqV@localhost:5433/crewloop?sslmode=disable"
+    )
+
 
 settings = Settings()

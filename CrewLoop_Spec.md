@@ -60,7 +60,7 @@ CrewLoop then:
 
 ### Demo outcome
 
-CrewLoop finds Maya, a qualified bartender nearby, texts her, calls her when urgent, confirms the shift, sends the owner an email, verifies Maya checked in, and releases payment after proof of work.
+CrewLoop finds Emma, a qualified bartender nearby, texts her, calls her when urgent, confirms the shift, sends the owner an email, verifies Emma checked in, and releases payment after proof of work.
 
 ## 5. Sponsor Usage
 
@@ -141,7 +141,7 @@ Keep real credentials in local environment files only. The repo should document 
 **Example ranking:**
 
 ```text
-Maya - bartender - 98% reliability - 2 miles away - recommended
+Emma - bartender - 98% reliability - 2 miles away - recommended
 Chris - bartender - 61% reliability - backup
 Luis - server - skill mismatch
 ```
@@ -596,12 +596,12 @@ Live demo:
 2. Browser Use extracts: bartender, tonight, 6-10 PM, SoMa, $120, event experience, urgent.
 3. Dispatch Room appears with source evidence from the page.
 4. CrewLoop ranks contractors.
-5. CrewLoop texts Maya.
-6. Because the job is urgent, CrewLoop calls Maya.
-7. Maya accepts.
-8. CrewLoop schedules Maya, marks the web source as filled, and emails the owner.
+5. CrewLoop texts Emma.
+6. Because the job is urgent, CrewLoop calls Emma.
+7. Emma accepts.
+8. CrewLoop schedules Emma, marks the web source as filled, and emails the owner.
 9. CrewLoop creates a $120 payment hold.
-10. Maya checks in with proof.
+10. Emma checks in with proof.
 11. Owner approves release.
 12. Payment is released and receipt is emailed.
 
@@ -614,7 +614,7 @@ Closing:
 ### Hour 0-1: Lock demo and data
 
 - Create Bay Events Co. fake business.
-- Create contractor roster: Maya, Chris, Luis, Priya.
+- Create contractor roster: Emma, Chris, Luis, Priya.
 - Create one urgent bartender job.
 - Write contractor call/SMS scripts.
 

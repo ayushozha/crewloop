@@ -142,6 +142,44 @@ curl -X POST https://crewloop-api.ayushojha.com/api/calls/place \
 
 Reply to the SMS from your phone and watch the Coolify logs for the `inbound SMS from …` log line.
 
+## Transcript persistence + dashboard
+
+Every SMS (in or out) and every completed call is written to a Postgres `crewloop` database on the shared `projects-postgres` (per CLAUDE.md VPS config). The dashboard at `/dashboard` reads from the same DB.
+
+### Schema
+
+- `conversations` — one row per contractor phone (E.164). Holds `display_name` + `last_message_at`. Phone is the unique key, so a new dispatch reuses the existing conversation.
+- `messages` — chronological SMS log linked to a conversation. `agentphone_id` UNIQUE for idempotent webhook retries.
+- `calls` — outbound calls with `agentphone_call_id` UNIQUE. Filled in two passes: row is inserted when `place_call` succeeds; transcript + summary + duration are written on `agent.call_ended`.
+
+DDL lives in `backend/scripts/init_db.sql`. Apply once per environment:
+
+```bash
+# From the VPS (Coolify host)
+docker cp backend/scripts/init_db.sql projects-db:/tmp/init.sql
+docker exec projects-db psql -U admin -d crewloop -f /tmp/init.sql
+```
+
+### Endpoints
+
+- `GET /api/conversations` — list with last-message preview, `message_count`, `call_count`, sorted by recency.
+- `GET /api/conversations/{phone}` — full thread + linked calls (with transcript) for a single E.164 phone.
+- `GET /api/calls` — flat list of all calls across all conversations.
+
+### Dashboard UI
+
+`GET /dashboard` serves `backend/app/static/dashboard.html`. Sidebar lists conversations; the main pane renders messages (inbound left/cream, outbound right/dark) interleaved chronologically with call cards (duration, summary, transcript). Polls every 5s; no auth in front (explicitly skipped for hackathon scope — add a token header before exposing publicly).
+
+### Local dev with the VPS DB
+
+Open the SSH tunnel from CLAUDE.md before running uvicorn:
+
+```bash
+ssh -fN -L 5433:127.0.0.1:5433 ayush@72.62.82.57
+```
+
+The default `DATABASE_URL` in `backend/app/config.py` points at `localhost:5433` so this just works.
+
 ## What's NOT included (yet)
 
 - **Contractor matching / ranking**: the SMS endpoint is dumb-pipe today. The matching agent (spec §6.2) will sit in front of it and pick the recipient.

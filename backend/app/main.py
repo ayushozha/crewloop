@@ -1,18 +1,44 @@
 import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
-from .routes import calls, sms, webhooks
+from . import db
+from .routes import calls, conversations, sms, webhooks
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-app = FastAPI(title="CrewLoop API", version="0.1.0")
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await db.connect()
+    try:
+        yield
+    finally:
+        await db.disconnect()
+
+
+app = FastAPI(title="CrewLoop API", version="0.2.0", lifespan=lifespan)
 app.include_router(sms.router)
 app.include_router(calls.router)
 app.include_router(webhooks.router)
+app.include_router(conversations.router)
+
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/dashboard", include_in_schema=False)
+async def dashboard() -> FileResponse:
+    return FileResponse(STATIC_DIR / "dashboard.html")
