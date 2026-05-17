@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CrewLoop — The AI dispatcher for contractor work</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#F6F4EE;
+    --panel:#FBFAF6;
+    --ink:#161410;
+    --ink-2:#3A372F;
+    --muted:#7A766C;
+    --line:rgba(22,20,16,0.10);
+    --line-2:rgba(22,20,16,0.06);
+    --accent:#3E7C4E;       /* released/green */
+    --accent-soft:#E6EFE5;
+    --urgent:#C8482E;       /* urgent/red signal */
+    --urgent-soft:#F4E3DC;
+    --amber:#B8862C;
+    --amber-soft:#F2E8D1;
+    --radius:14px;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Geist", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size:16px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  ::selection{background:#1614101A;color:var(--ink)}
+
+  /* Type */
+  .serif{font-family:"Instrument Serif", "Times New Roman", serif; font-weight:400; letter-spacing:-0.01em}
+  .mono{font-family:"Geist Mono", ui-monospace, "SF Mono", Menlo, monospace; font-feature-settings:"ss01"}
+  .eyebrow{
+    font-family:"Geist Mono", ui-monospace, monospace;
+    font-size:11px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+
+  a{color:inherit;text-decoration:none}
+  button{font:inherit;cursor:pointer}
+
+  /* Layout */
+  .wrap{max-width:1180px;margin:0 auto;padding:0 32px}
+  @media (max-width:720px){ .wrap{padding:0 20px} }
+
+  /* Nav */
+  .nav{
+    position:sticky;top:0;z-index:50;
+    background:color-mix(in oklab, var(--bg) 84%, transparent);
+    backdrop-filter:saturate(140%) blur(10px);
+    -webkit-backdrop-filter:saturate(140%) blur(10px);
+    border-bottom:1px solid transparent;
+    transition:border-color .2s ease;
+  }
+  .nav.scrolled{border-bottom-color:var(--line)}
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;height:64px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:500;letter-spacing:-0.01em}
+  .brand-mark{
+    width:22px;height:22px;border-radius:6px;
+    background:var(--ink);
+    display:grid;place-items:center;
+  }
+  .brand-mark svg{display:block}
+  .brand b{font-weight:500;font-size:17px}
+  .nav-links{display:flex;gap:28px}
+  .nav-links a{font-size:14px;color:var(--ink-2)}
+  .nav-links a:hover{color:var(--ink)}
+  @media (max-width:720px){ .nav-links{display:none} }
+
+  /* Buttons */
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:10px 16px;border-radius:999px;
+    font-size:14px;font-weight:500;
+    border:1px solid transparent;
+    transition:transform .15s ease, background .15s ease, border-color .15s ease;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn-primary{background:var(--ink);color:#FBFAF6}
+  .btn-primary:hover{background:#000}
+  .btn-ghost{color:var(--ink);border-color:var(--line)}
+  .btn-ghost:hover{border-color:var(--ink)}
+  .btn .arrow{transition:transform .2s ease}
+  .btn:hover .arrow{transform:translateX(2px)}
+
+  /* Hero */
+  .hero{padding:72px 0 28px}
+  @media (max-width:720px){ .hero{padding:36px 0 16px} }
+
+  .hero-eyebrow{display:flex;align-items:center;gap:10px;margin-bottom:28px}
+  .hero-eyebrow .dot{
+    width:7px;height:7px;border-radius:999px;background:var(--accent);
+    box-shadow:0 0 0 4px rgba(62,124,78,0.16);
+    animation:pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{box-shadow:0 0 0 4px rgba(62,124,78,0.16)}
+    50%{box-shadow:0 0 0 7px rgba(62,124,78,0.04)}
+  }
+
+  h1.display{
+    font-family:"Instrument Serif", serif;
+    font-weight:400;
+    font-size:clamp(44px, 7.4vw, 104px);
+    line-height:0.98;
+    letter-spacing:-0.025em;
+    margin:0 0 26px;
+    max-width:14ch;
+    color:var(--ink);
+  }
+  h1.display em{font-style:italic;color:var(--accent)}
+  .lede{
+    font-size:clamp(17px, 1.6vw, 20px);
+    line-height:1.5;
+    color:var(--ink-2);
+    max-width:54ch;
+    margin:0 0 36px;
+  }
+  .cta-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+
+  /* Hero showcase — a layered scene of product surfaces */
+  .scene{
+    position:relative;
+    margin-top:72px;
+    padding:48px 24px 56px;
+    border:1px solid var(--line);
+    border-radius:24px;
+    background:
+      radial-gradient(800px 200px at 50% 0%, #EEEAE0 0%, transparent 60%),
+      var(--panel);
+    overflow:hidden;
+  }
+  @media (max-width:720px){ .scene{margin-top:48px;padding:28px 14px 36px} }
+
+  .scene-grid{
+    display:grid;
+    grid-template-columns: 1fr 1.05fr 1fr;
+    gap:18px;
+    align-items:stretch;
+  }
+  @media (max-width:960px){
+    .scene-grid{grid-template-columns:1fr; max-width:440px; margin:0 auto}
+  }
+
+  /* Cards */
+  .card{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:18px;
+    box-shadow:0 1px 0 rgba(22,20,16,0.02), 0 10px 24px -16px rgba(22,20,16,0.18);
+  }
+  .card-title{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:14px;
+  }
+  .card-title h4{
+    margin:0;font-size:13px;font-weight:500;color:var(--ink);
+    display:flex;align-items:center;gap:8px;
+  }
+  .card-title .tag{
+    font-family:"Geist Mono", monospace;
+    font-size:10px;letter-spacing:0.08em;text-transform:uppercase;
+    color:var(--muted);
+  }
+
+  /* SMS card */
+  .sms-card{display:flex;flex-direction:column;gap:10px;justify-content:flex-start}
+  .sms-meta{
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:12px;color:var(--muted);
+    padding-bottom:10px;border-bottom:1px solid var(--line-2);margin-bottom:4px;
+  }
+  .sms-meta .from{display:flex;align-items:center;gap:8px}
+  .avatar{
+    width:22px;height:22px;border-radius:999px;
+    background:#E5E0D2;color:#5B5648;
+    display:grid;place-items:center;font-size:10px;font-weight:600;
+  }
+  .bubble{
+    max-width:88%;
+    padding:11px 14px;
+    border-radius:16px;
+    font-size:14px;line-height:1.45;
+  }
+  .bubble.in{align-self:flex-start;background:#F0EDE3;color:var(--ink);border-bottom-left-radius:6px}
+  .bubble.out{align-self:flex-end;background:var(--ink);color:#FBFAF6;border-bottom-right-radius:6px}
+  .bubble .urgent-chip{
+    display:inline-flex;align-items:center;gap:5px;
+    background:var(--urgent-soft);color:var(--urgent);
+    font-family:"Geist Mono", monospace; font-size:10px;letter-spacing:0.08em;text-transform:uppercase;
+    padding:2px 7px;border-radius:999px;margin-left:4px;
+  }
+  .typing{
+    align-self:flex-start;background:#F0EDE3;border-radius:16px;border-bottom-left-radius:6px;
+    padding:10px 12px;display:inline-flex;gap:4px;
+  }
+  .typing span{
+    width:5px;height:5px;border-radius:999px;background:#9A9384;
+    animation:bounce 1.2s ease-in-out infinite;
+  }
+  .typing span:nth-child(2){animation-delay:.15s}
+  .typing span:nth-child(3){animation-delay:.3s}
+  @keyframes bounce{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-3px);opacity:1}}
+
+  /* Match card */
+  .match-card .row{
+    display:grid;
+    grid-template-columns: 28px 1fr auto;
+    gap:12px;align-items:center;
+    padding:12px 4px;border-bottom:1px solid var(--line-2);
+  }
+  .match-card .row:last-child{border-bottom:0}
+  .match-card .row.featured{
+    background:linear-gradient(0deg, var(--accent-soft), var(--accent-soft));
+    border-radius:10px;
+    padding:12px 12px;
+    margin:0 -8px;
+    border-bottom:1px solid transparent;
+    border:1px solid rgba(62,124,78,0.22);
+  }
+  .av{
+    width:28px;height:28px;border-radius:999px;
+    background:#E5E0D2;color:#5B5648;
+    display:grid;place-items:center;font-size:11px;font-weight:600;
+  }
+  .av.maya{background:#D7E5D8;color:#2C5638}
+  .name-line{display:flex;flex-direction:column;line-height:1.2}
+  .name-line .nm{font-size:14px;font-weight:500;color:var(--ink)}
+  .name-line .meta{font-size:11.5px;color:var(--muted);font-family:"Geist Mono", monospace;letter-spacing:0.02em}
+  .pill{
+    font-family:"Geist Mono", monospace;
+    font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;
+    padding:4px 8px;border-radius:999px;
+    background:#F0EDE3;color:var(--ink-2);
+    white-space:nowrap;
+  }
+  .pill.green{background:var(--accent);color:#FBFAF6}
+  .pill.dim{color:var(--muted)}
+
+  /* Timeline card */
+  .tl{display:flex;flex-direction:column;gap:0}
+  .tl-row{
+    display:grid;grid-template-columns: 22px 1fr auto;gap:10px;align-items:center;
+    padding:10px 0;
+    position:relative;
+  }
+  .tl-row::before{
+    content:"";position:absolute;left:10px;top:18px;bottom:-10px;width:1.5px;
+    background:var(--line);
+  }
+  .tl-row:last-child::before{display:none}
+  .tl-dot{
+    width:18px;height:18px;border-radius:999px;background:#fff;
+    border:1.5px solid var(--line);
+    display:grid;place-items:center;position:relative;z-index:1;
+  }
+  .tl-dot.done{background:var(--accent);border-color:var(--accent)}
+  .tl-dot.done::after{
+    content:"";width:7px;height:4px;border-left:1.5px solid #fff;border-bottom:1.5px solid #fff;
+    transform:rotate(-45deg) translate(0px,-1px);
+  }
+  .tl-dot.live{
+    background:#fff;border-color:var(--accent);
+    box-shadow:0 0 0 0 rgba(62,124,78,0.4);
+    animation:tlpulse 1.6s ease-out infinite;
+  }
+  @keyframes tlpulse{
+    0%{box-shadow:0 0 0 0 rgba(62,124,78,0.4)}
+    100%{box-shadow:0 0 0 8px rgba(62,124,78,0)}
+  }
+  .tl-text{font-size:13.5px;color:var(--ink-2)}
+  .tl-text b{color:var(--ink);font-weight:500}
+  .tl-time{font-family:"Geist Mono", monospace;font-size:11px;color:var(--muted)}
+
+  /* Section base */
+  section{padding:96px 0;border-top:1px solid var(--line-2)}
+  @media (max-width:720px){ section{padding:64px 0} }
+  .section-head{display:grid;grid-template-columns:1fr;gap:14px;margin-bottom:48px;max-width:760px}
+  .section-head h2{
+    font-family:"Instrument Serif", serif;font-weight:400;
+    font-size:clamp(34px, 4.6vw, 56px);
+    letter-spacing:-0.02em;line-height:1.02;margin:0;
+  }
+  .section-head h2 em{font-style:italic;color:var(--accent)}
+  .section-head p{margin:0;color:var(--ink-2);max-width:56ch;font-size:17px;line-height:1.55}
+
+  /* The loop — numbered flow */
+  .loop{display:grid;grid-template-columns:repeat(12,1fr);gap:18px}
+  .loop-step{
+    grid-column:span 3;
+    padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    min-height:180px;display:flex;flex-direction:column;justify-content:space-between;gap:18px;
+    transition:transform .2s ease, border-color .2s ease, background .2s ease;
+  }
+  .loop-step:hover{transform:translateY(-2px);border-color:rgba(22,20,16,0.2)}
+  .loop-step .n{font-family:"Geist Mono", monospace;font-size:11px;color:var(--muted);letter-spacing:0.1em}
+  .loop-step h3{
+    font-family:"Instrument Serif", serif;font-weight:400;
+    font-size:24px;line-height:1.1;letter-spacing:-0.01em;margin:0;
+  }
+  .loop-step p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.5}
+  @media (max-width:980px){
+    .loop-step{grid-column:span 6}
+  }
+  @media (max-width:560px){
+    .loop-step{grid-column:span 12}
+  }
+
+  /* Quote / demo strip */
+  .strip{
+    margin-top:48px;
+    padding:32px;
+    border-radius:var(--radius);
+    background:var(--ink);color:#F0EDE3;
+    display:grid;grid-template-columns:1.2fr 1fr;gap:32px;align-items:center;
+  }
+  @media (max-width:760px){ .strip{grid-template-columns:1fr;padding:24px} }
+  .strip .quote{
+    font-family:"Instrument Serif", serif;font-size:clamp(22px,2.4vw,30px);
+    line-height:1.25;letter-spacing:-0.01em;
+  }
+  .strip .quote em{font-style:italic;color:#C9D9C2}
+  .strip .meta{font-family:"Geist Mono", monospace;font-size:11px;color:#8C887D;letter-spacing:0.1em;text-transform:uppercase;margin-top:14px}
+  .reactions{display:flex;flex-direction:column;gap:10px}
+  .react{
+    display:flex;gap:10px;align-items:center;
+    font-size:13.5px;
+    padding:10px 14px;border-radius:10px;
+    background:rgba(255,255,255,0.04);
+    border:1px solid rgba(255,255,255,0.08);
+  }
+  .react .label{font-family:"Geist Mono", monospace;font-size:11px;color:#A8A493;letter-spacing:0.06em;text-transform:uppercase;min-width:62px}
+  .react .val{color:#F0EDE3}
+
+  /* Industries */
+  .industries{
+    display:flex;flex-wrap:wrap;gap:10px;
+  }
+  .ind-chip{
+    padding:10px 16px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel);
+    font-size:14px;color:var(--ink-2);
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .ind-chip:hover{background:var(--ink);color:#FBFAF6;border-color:var(--ink)}
+
+  /* Release rule card */
+  .rule{
+    display:grid;grid-template-columns: 1.05fr 1fr;gap:32px;align-items:stretch;
+  }
+  @media (max-width:880px){ .rule{grid-template-columns:1fr} }
+  .rule-text h3{
+    font-family:"Instrument Serif", serif;font-weight:400;
+    font-size:clamp(28px, 3.4vw, 40px);
+    line-height:1.05;letter-spacing:-0.015em;margin:0 0 16px;
+  }
+  .rule-text h3 em{font-style:italic;color:var(--accent)}
+  .rule-text p{color:var(--ink-2);font-size:16px;line-height:1.6;margin:0 0 16px;max-width:48ch}
+
+  .rule-card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px;
+    display:flex;flex-direction:column;gap:16px;
+    position:relative;overflow:hidden;
+  }
+  .rule-card::before{
+    content:"";position:absolute;inset:0;
+    background:radial-gradient(400px 100px at 100% 0%, rgba(62,124,78,0.08), transparent 60%);
+    pointer-events:none;
+  }
+  .rule-amt{
+    display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    padding-bottom:14px;border-bottom:1px solid var(--line-2);
+  }
+  .rule-amt .num{font-family:"Instrument Serif", serif;font-size:56px;letter-spacing:-0.03em;line-height:1}
+  .rule-amt .label{font-family:"Geist Mono", monospace;font-size:11px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase}
+  .rule-status{
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:"Geist Mono", monospace;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;
+    color:var(--accent);
+    padding:5px 10px;border-radius:999px;background:var(--accent-soft);
+    align-self:flex-start;
+  }
+  .rule-status .dot{
+    width:6px;height:6px;border-radius:999px;background:var(--accent);
+  }
+  .rule-list{display:flex;flex-direction:column;gap:10px}
+  .rule-item{
+    display:grid;grid-template-columns: 20px 1fr auto;gap:12px;align-items:center;
+    font-size:14px;color:var(--ink-2);
+    padding:6px 0;
+  }
+  .check{
+    width:18px;height:18px;border-radius:6px;background:var(--accent);
+    display:grid;place-items:center;
+  }
+  .check::after{
+    content:"";width:7px;height:4px;border-left:1.5px solid #fff;border-bottom:1.5px solid #fff;
+    transform:rotate(-45deg) translate(0,-1px);
+  }
+  .rule-item .pill{align-self:end}
+
+  /* Big closing CTA */
+  .end{
+    margin-top:80px;
+    padding:64px 40px;border:1px solid var(--line);border-radius:24px;
+    background:var(--panel);
+    display:grid;grid-template-columns: 1.2fr auto;align-items:end;gap:32px;
+  }
+  @media (max-width:760px){
+    .end{grid-template-columns:1fr;padding:40px 24px;text-align:left}
+  }
+  .end h2{
+    font-family:"Instrument Serif", serif;font-weight:400;
+    font-size:clamp(34px, 4.4vw, 56px);
+    line-height:1.0;letter-spacing:-0.02em;margin:0;max-width:18ch;
+  }
+  .end h2 em{font-style:italic;color:var(--accent)}
+  .end-meta{display:flex;flex-direction:column;gap:10px;align-items:flex-end}
+  @media (max-width:760px){ .end-meta{align-items:flex-start} }
+  .end-meta small{color:var(--muted);font-size:13px}
+
+  /* Footer */
+  footer{padding:48px 0 64px;border-top:1px solid var(--line-2);color:var(--muted);font-size:13px}
+  .foot-grid{display:flex;justify-content:space-between;align-items:flex-end;gap:32px;flex-wrap:wrap}
+  .foot-cols{display:flex;gap:48px;flex-wrap:wrap}
+  .foot-cols b{display:block;color:var(--ink);margin-bottom:10px;font-weight:500;font-size:13px}
+  .foot-cols a{display:block;margin-bottom:6px;color:var(--ink-2)}
+  .foot-cols a:hover{color:var(--ink)}
+
+  /* Accent on the live demo strip number */
+  .demo-amt{color:var(--accent);font-family:"Instrument Serif", serif;font-size:1.1em}
+
+  /* small helper */
+  .row-spread{display:flex;justify-content:space-between;align-items:center;gap:12px}
+</style>
+</head>
+<body>
+
+<!-- ===================== NAV ===================== -->
+<header class="nav" id="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#" aria-label="CrewLoop home">
+      <span class="brand-mark" aria-hidden="true">
+        <!-- simple loop glyph -->
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M2 7a5 5 0 1 1 8.5 3.5" stroke="#FBFAF6" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="M10.5 7.5L10.5 10.5L7.5 10.5" stroke="#FBFAF6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <b>CrewLoop</b>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#how">How it works</a>
+      <a href="#who">Who it's for</a>
+      <a href="#rule">Payment rule</a>
+      <a href="#cta">Pricing</a>
+    </nav>
+    <a class="btn btn-primary" href="#cta">
+      Request a demo
+      <svg class="arrow" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <path d="M3 7h8M7.5 3.5L11 7l-3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </a>
+  </div>
+</header>
+
+<!-- ===================== HERO ===================== -->
+<main>
+  <section class="hero" style="border-top:0;padding-top:72px">
+    <div class="wrap">
+      <div class="hero-eyebrow">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="eyebrow">AI dispatcher · contractor staffing</span>
+      </div>
+
+      <h1 class="display">
+        Your bartender canceled. <em>Maya's behind the bar by 6.</em>
+      </h1>
+
+      <p class="lede">
+        CrewLoop is the AI dispatcher for contractor-heavy small businesses. It finds the right person, texts or calls them based on urgency, schedules the shift, verifies they showed up — and releases payment only when the work is done.
+      </p>
+
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#cta">
+          Request a demo
+          <svg class="arrow" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M3 7h8M7.5 3.5L11 7l-3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+        <a class="btn btn-ghost" href="#how">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <circle cx="6" cy="6" r="5.2" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M5 4l3 2-3 2V4Z" fill="currentColor"/>
+          </svg>
+          Watch the 60-second loop
+        </a>
+      </div>
+
+      <!-- Layered product scene -->
+      <div class="scene" aria-hidden="false">
+        <div class="scene-grid">
+
+          <!-- SMS thread -->
+          <div class="card sms-card" role="figure" aria-label="SMS thread between owner and CrewLoop">
+            <div class="sms-meta">
+              <span class="from"><span class="avatar">BE</span>Bay Events Co.</span>
+              <span class="mono" style="font-size:10.5px;letter-spacing:0.06em">5:42 PM</span>
+            </div>
+            <div class="bubble in">
+              Need a bartender tonight 6–10 PM in SoMa. Must have event experience. Pay $120.
+              <span class="urgent-chip">● Urgent</span>
+            </div>
+            <div class="bubble out">
+              On it. Parsing the request and ranking 4 bartenders within 3 miles.
+            </div>
+            <div class="bubble out">
+              Maya looks best — 98% reliability, available, $30/hr. Texting now, calling in 90s if no reply.
+            </div>
+            <div class="typing" aria-label="Typing"><span></span><span></span><span></span></div>
+          </div>
+
+          <!-- Contractor match list -->
+          <div class="card match-card" role="figure" aria-label="Ranked contractor matches">
+            <div class="card-title">
+              <h4>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.4"/>
+                  <path d="M5 7l1.4 1.4L9.2 5.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Matched 4 contractors
+              </h4>
+              <span class="tag">Re-ranked · 2s</span>
+            </div>
+
+            <div class="row featured">
+              <div class="av maya">M</div>
+              <div class="name-line">
+                <span class="nm">Maya Okafor</span>
+                <span class="meta">2.1 mi · 98% reliable · $30/hr</span>
+              </div>
+              <span class="pill green">Texting</span>
+            </div>
+
+            <div class="row">
+              <div class="av">C</div>
+              <div class="name-line">
+                <span class="nm">Chris Patel</span>
+                <span class="meta">3.4 mi · 61% reliable · $28/hr</span>
+              </div>
+              <span class="pill dim">Backup</span>
+            </div>
+
+            <div class="row">
+              <div class="av">L</div>
+              <div class="name-line">
+                <span class="nm">Luis Romero</span>
+                <span class="meta">Server · skill mismatch</span>
+              </div>
+              <span class="pill dim">Skipped</span>
+            </div>
+
+            <div class="row">
+              <div class="av">P</div>
+              <div class="name-line">
+                <span class="nm">Priya Shah</span>
+                <span class="meta">Unavailable tonight</span>
+              </div>
+              <span class="pill dim">—</span>
+            </div>
+          </div>
+
+          <!-- Live timeline -->
+          <div class="card" role="figure" aria-label="Live dispatch timeline">
+            <div class="card-title">
+              <h4>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <circle cx="7" cy="7" r="5.2" stroke="currentColor" stroke-width="1.4"/>
+                  <path d="M7 4v3.2l2 1.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                </svg>
+                Dispatch timeline
+              </h4>
+              <span class="tag">Live</span>
+            </div>
+
+            <div class="tl">
+              <div class="tl-row">
+                <span class="tl-dot done" aria-hidden="true"></span>
+                <span class="tl-text"><b>Request parsed</b> · bartender, SoMa, $120</span>
+                <span class="tl-time">5:42</span>
+              </div>
+              <div class="tl-row">
+                <span class="tl-dot done"></span>
+                <span class="tl-text"><b>Maya texted</b> · top match</span>
+                <span class="tl-time">5:43</span>
+              </div>
+              <div class="tl-row">
+                <span class="tl-dot done"></span>
+                <span class="tl-text"><b>Call placed</b> · urgent escalation</span>
+                <span class="tl-time">5:44</span>
+              </div>
+              <div class="tl-row">
+                <span class="tl-dot live" aria-label="In progress"></span>
+                <span class="tl-text"><b>Confirming shift</b> with Maya…</span>
+                <span class="tl-time">5:45</span>
+              </div>
+              <div class="tl-row">
+                <span class="tl-dot"></span>
+                <span class="tl-text" style="color:var(--muted)">Owner email summary</span>
+                <span class="tl-time">—</span>
+              </div>
+              <div class="tl-row">
+                <span class="tl-dot"></span>
+                <span class="tl-text" style="color:var(--muted)">Payment hold · $120</span>
+                <span class="tl-time">—</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== HOW IT WORKS (the loop) ===================== -->
+  <section id="how">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">The loop</span>
+        <h2>One text in. <em>A staffed, verified, paid shift out.</em></h2>
+        <p>CrewLoop is built around a single closed loop. Every step is automated, logged, and reversible — so the owner only steps in for one decision: <em>approve the release</em>.</p>
+      </div>
+
+      <div class="loop">
+        <div class="loop-step">
+          <span class="n">01 · Intake</span>
+          <h3>Parse the text into a real job.</h3>
+          <p>Role, time, location, pay, urgency, skills — extracted from a single SMS. One follow-up question only if something is missing.</p>
+        </div>
+        <div class="loop-step">
+          <span class="n">02 · Match</span>
+          <h3>Rank your roster, not strangers.</h3>
+          <p>Match on skill, distance, availability, reliability, and response speed. Backups identified up front.</p>
+        </div>
+        <div class="loop-step">
+          <span class="n">03 · Reach out</span>
+          <h3>Text first. Call when it's urgent.</h3>
+          <p>Top match gets a text. If urgent or unanswered, CrewLoop calls. Replies — "yes," "what's the pay" — are handled inline.</p>
+        </div>
+        <div class="loop-step">
+          <span class="n">04 · Schedule</span>
+          <h3>Lock the shift the moment they accept.</h3>
+          <p>Confirmation goes to the contractor, summary email to the owner, check-in reminder set, backup queued just in case.</p>
+        </div>
+        <div class="loop-step">
+          <span class="n">05 · Verify</span>
+          <h3>Proof of work, not promises.</h3>
+          <p>SMS check-in, photo, QR scan, or manager sign-off. Suspicious or missing proof gets flagged before payday.</p>
+        </div>
+        <div class="loop-step">
+          <span class="n">06 · Hold</span>
+          <h3>Pay is escrowed, not sent.</h3>
+          <p>A payment hold is created the second a contractor accepts. Capped, conditional, and never released without proof.</p>
+        </div>
+        <div class="loop-step">
+          <span class="n">07 · Approve</span>
+          <h3>One tap to release.</h3>
+          <p>You see the proof, the receipt preview, and the rule that triggered. Approve and the money moves.</p>
+        </div>
+        <div class="loop-step">
+          <span class="n">08 · Learn</span>
+          <h3>Your roster gets smarter every job.</h3>
+          <p>Reliability, response speed, no-shows, and notes update silently. Tomorrow's top match is better than today's.</p>
+        </div>
+      </div>
+
+      <!-- demo strip / quote -->
+      <div class="strip">
+        <div>
+          <div class="quote">
+            "Need a bartender tonight 6–10 PM in SoMa. Must have event experience. Pay <span class="demo-amt">$120</span>. Urgent."
+          </div>
+          <div class="meta">— One inbound SMS · the entire input CrewLoop needs</div>
+        </div>
+        <div class="reactions">
+          <div class="react"><span class="label">00:02</span><span class="val">4 contractors ranked, Maya selected</span></div>
+          <div class="react"><span class="label">00:18</span><span class="val">SMS sent to Maya · call queued</span></div>
+          <div class="react"><span class="label">01:42</span><span class="val">Maya confirmed · shift locked</span></div>
+          <div class="react"><span class="label">22:07</span><span class="val">Proof received · $120 released</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== WHO IT'S FOR ===================== -->
+  <section id="who">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Built for</span>
+        <h2>Businesses that run on a <em>group chat and a spreadsheet.</em></h2>
+        <p>If your staffing happens in a contractor list and your "system" is a flurry of texts every week, CrewLoop is for you.</p>
+      </div>
+
+      <div class="industries">
+        <span class="ind-chip">Event staffing</span>
+        <span class="ind-chip">Catering</span>
+        <span class="ind-chip">Cleaning crews</span>
+        <span class="ind-chip">Moving companies</span>
+        <span class="ind-chip">Home services</span>
+        <span class="ind-chip">Photographers &amp; production</span>
+        <span class="ind-chip">Hospitality teams</span>
+        <span class="ind-chip">Security staffing</span>
+        <span class="ind-chip">Field service operators</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAYMENT RULE ===================== -->
+  <section id="rule">
+    <div class="wrap">
+      <div class="rule">
+        <div class="rule-text">
+          <span class="eyebrow">Conditional payout</span>
+          <h3 style="margin-top:14px">Money moves <em>only when the work is done.</em></h3>
+          <p>Every dispatch creates an escrowed hold with a release rule attached. The rule is plain English, but enforced like code — capped pay, identity match, proof required, owner approval required.</p>
+          <p>Missing proof? Wrong person checked in? The release is blocked automatically and you're alerted before payday.</p>
+          <div class="cta-row" style="margin-top:8px">
+            <a class="btn btn-ghost" href="#cta">See the rule engine
+              <svg class="arrow" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M3 7h8M7.5 3.5L11 7l-3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </a>
+          </div>
+        </div>
+
+        <div class="rule-card">
+          <div class="row-spread">
+            <span class="rule-status"><span class="dot"></span>Released · 22:08</span>
+            <span class="tag mono" style="font-size:10.5px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">JOB #4218 · MAYA O.</span>
+          </div>
+          <div class="rule-amt">
+            <span class="num">$120<span style="color:var(--muted);font-size:0.32em;letter-spacing:0.02em;margin-left:8px">.00</span></span>
+            <span class="label">Bartender · 4hr shift</span>
+          </div>
+          <div class="rule-list">
+            <div class="rule-item"><span class="check" aria-hidden="true"></span><span>Contractor accepted the shift</span><span class="pill dim">17:45</span></div>
+            <div class="rule-item"><span class="check" aria-hidden="true"></span><span>Contractor checked in on location</span><span class="pill dim">17:58</span></div>
+            <div class="rule-item"><span class="check" aria-hidden="true"></span><span>Proof submitted &amp; verified</span><span class="pill dim">22:04</span></div>
+            <div class="rule-item"><span class="check" aria-hidden="true"></span><span>Owner approved completion</span><span class="pill dim">22:07</span></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding-top:14px;border-top:1px solid var(--line-2);font-size:12.5px;color:var(--muted)">
+            <span>Receipt #R-4218 · Stripe</span>
+            <span class="mono">payment.released</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== CTA ===================== -->
+  <section id="cta" style="padding-bottom:32px">
+    <div class="wrap">
+      <div class="end">
+        <h2>Stop staffing by group chat. <em>Start running a dispatch loop.</em></h2>
+        <div class="end-meta">
+          <a class="btn btn-primary" href="#" style="padding:14px 22px;font-size:15px">
+            Request a demo
+            <svg class="arrow" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M3 7h8M7.5 3.5L11 7l-3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+          <small>Or text <span class="mono" style="color:var(--ink)">(415) 555-LOOP</span> with a real job — see what CrewLoop does with it.</small>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ===================== FOOTER ===================== -->
+<footer>
+  <div class="wrap foot-grid">
+    <div>
+      <div class="brand" style="margin-bottom:8px">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M2 7a5 5 0 1 1 8.5 3.5" stroke="#FBFAF6" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M10.5 7.5L10.5 10.5L7.5 10.5" stroke="#FBFAF6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <b>CrewLoop</b>
+      </div>
+      <div style="max-width:34ch">The AI dispatcher for contractor-heavy small businesses. © 2026 CrewLoop, Inc.</div>
+    </div>
+    <div class="foot-cols">
+      <div>
+        <b>Product</b>
+        <a href="#how">How it works</a>
+        <a href="#rule">Payment rule</a>
+        <a href="#who">Industries</a>
+      </div>
+      <div>
+        <b>Company</b>
+        <a href="#">About</a>
+        <a href="#">Careers</a>
+        <a href="#">Contact</a>
+      </div>
+      <div>
+        <b>Legal</b>
+        <a href="#">Terms</a>
+        <a href="#">Privacy</a>
+        <a href="#">Security</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Subtle nav border when scrolled
+  const nav = document.getElementById('nav');
+  const onScroll = () => {
+    if (window.scrollY > 8) nav.classList.add('scrolled');
+    else nav.classList.remove('scrolled');
+  };
+  document.addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+</script>
+
+</body>
+</html>
