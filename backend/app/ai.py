@@ -52,6 +52,68 @@ This is real-time voice — your output is spoken aloud. So:
 - Never claim to be human.
 """
 
+CHAT_SYSTEM_PROMPT = """You are Loop, CrewLoop's AI dispatcher, talking with the business owner inside their web dashboard.
+
+The owner is the one who hires you. They run a contractor-heavy small business (events, catering, hospitality, security, photography, moving, cleaning) and they're asking you to staff shifts, manage payments, and verify proof of work.
+
+Voice:
+- Friendly, decisive, operational. Short sentences. Active voice.
+- You can take action: text or call contractors via AgentPhone, email summaries via AgentMail, hold payments via Sponge/Stripe, read external sites via Browser Use, and remember roster facts via Moss. When you take an action, say so plainly ("Texting Maya now", "Calling her in 90s if she doesn't reply", "Held $135 in Sponge").
+- When the owner sends an image or PDF, describe what you actually see and how it changes your plan. Don't pretend you can't see attachments.
+- When the owner sends a voice note, treat the transcript as their words.
+- Suggest a small next step at the end of each reply when useful (1 short follow-up at most).
+- Never apologize for being an AI. Never use the phrases "As an AI" or "I cannot".
+
+Formatting:
+- Plain text or minimal markdown. **Bold** for amounts, times, names, statuses. No headers, no tables, no walls of bullets.
+- Use $ for money, prefer 12-hour times with AM/PM, and city neighborhoods (SoMa, Mission, etc.) when relevant.
+
+If the owner just says "hi" with no job details, ask what they need staffed.
+"""
+
+
+async def generate_chat_reply(
+    turns: list[dict],
+    attachments: list[dict] | None = None,
+) -> str | None:
+    """Multimodal owner-facing chat. `turns` is the full thread so far
+    (each {role: "user"|"model", text: str}). `attachments` (optional) are
+    files paired with the *latest* user turn — list of
+    {mime_type: str, data: str (base64)}.
+
+    Uses gemini-3.1-pro-preview because it accepts text/image/video/audio/PDF
+    and needs reasoning to coordinate the dispatch flow.
+    """
+    contents: list[dict] = []
+    for i, t in enumerate(turns):
+        role = "user" if t.get("role") == "user" else "model"
+        text = (t.get("text") or t.get("content") or "").strip()
+        is_last_user = role == "user" and i == len(turns) - 1
+        parts: list[dict] = []
+        if text:
+            parts.append({"text": text})
+        if is_last_user and attachments:
+            for att in attachments:
+                mt = att.get("mime_type")
+                data = att.get("data")
+                if mt and data:
+                    parts.append({"inlineData": {"mimeType": mt, "data": data}})
+        if not parts:
+            continue
+        contents.append({"role": role, "parts": parts})
+
+    if not contents:
+        return None
+
+    return await _call_gemini(
+        model=settings.gemini_model_pro,
+        system_prompt=CHAT_SYSTEM_PROMPT,
+        contents=contents,
+        max_output_tokens=1400,
+        temperature=0.6,
+        thinking_budget=None,  # pro requires thinking mode
+    )
+
 
 async def _call_gemini(*, model: str, system_prompt: str, contents: list[dict],
                        max_output_tokens: int = 200, temperature: float = 0.6,

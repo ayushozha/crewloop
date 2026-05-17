@@ -97,6 +97,15 @@ export const api = {
   getContractor: (id: string) =>
     request<Contractor>(`/api/contractors/${encodeURIComponent(id)}`),
 
+  chat: (payload: {
+    turns: Array<{ role: "user" | "model" | "assistant"; text: string }>;
+    attachments?: Array<{ mime_type: string; data: string; name?: string }>;
+  }) =>
+    request<{ reply: string }>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
   // Dispatch-room workflow actions (parallel-session backend routes).
   dispatchAction: (
     jobId: string,
