@@ -85,6 +85,25 @@ export interface BrowserSource {
   end_time?: string;
 }
 
+export interface Contractor {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  age: number | null;
+  location: string;
+  distance_miles: number | null;
+  hourly_rate: number;
+  reliability_score: number;
+  response_speed: string;
+  languages: string[];
+  certifications: string[];
+  notes: string | null;
+  avatar_path: string | null;
+  skills: string[];
+  created_at: string;
+}
+
 export interface BrowserImportResponse {
   job: Job;
   browser_source: BrowserSource;

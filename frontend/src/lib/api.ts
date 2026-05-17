@@ -2,6 +2,7 @@ import type {
   BrowserImportResponse,
   BrowserSource,
   Call,
+  Contractor,
   Conversation,
   Job,
   Message,
@@ -84,6 +85,18 @@ export const api = {
   getDispatch: (jobId: string) =>
     request<DispatchPayload>(`/api/dispatch/${encodeURIComponent(jobId)}`),
 
+  listContractors: (params: { skill?: string; min_reliability?: number; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.skill) q.set("skill", params.skill);
+    if (params.min_reliability != null) q.set("min_reliability", String(params.min_reliability));
+    if (params.limit != null) q.set("limit", String(params.limit));
+    const suffix = q.toString() ? `?${q.toString()}` : "";
+    return request<{ items: Contractor[] }>(`/api/contractors${suffix}`);
+  },
+
+  getContractor: (id: string) =>
+    request<Contractor>(`/api/contractors/${encodeURIComponent(id)}`),
+
   // Dispatch-room workflow actions (parallel-session backend routes).
   dispatchAction: (
     jobId: string,
@@ -99,7 +112,10 @@ export const api = {
 export interface DispatchContractor {
   initials: string;
   name: string;
+  profile_image_url?: string;
   skills: string[];
+  capabilities?: string[];
+  can_do?: string;
   distance_miles: number;
   reliability_score: number;
   response_speed: string;
