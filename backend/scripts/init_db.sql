@@ -72,6 +72,26 @@ CREATE TABLE IF NOT EXISTS contractor_skills (
 
 CREATE INDEX IF NOT EXISTS contractor_skills_skill_idx ON contractor_skills (skill);
 
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku           text NOT NULL UNIQUE,
+  name          text NOT NULL,
+  category      text NOT NULL,
+  unit          text NOT NULL,
+  par_level     numeric(10,2) NOT NULL,
+  on_hand       numeric(10,2) NOT NULL,
+  reorder_point numeric(10,2) NOT NULL,
+  unit_cost     numeric(10,2) NOT NULL,
+  supplier      text,
+  location      text,
+  description   text,
+  image_path    text,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS inventory_items_category_idx ON inventory_items (category);
+CREATE INDEX IF NOT EXISTS inventory_items_on_hand_idx ON inventory_items (on_hand);
+
 CREATE TABLE IF NOT EXISTS jobs (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   business_name   text NOT NULL,
