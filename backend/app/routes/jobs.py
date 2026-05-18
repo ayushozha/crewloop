@@ -455,6 +455,31 @@ async def list_payment_holds_endpoint(job_id: UUID) -> dict[str, Any]:
     return {"items": items, "count": len(items)}
 
 
+# Spec §10 path aliases that re-use the supplies routes (functionally
+# identical to /api/events/{id}/supplies/{recommend,approve}, but the spec
+# names them under /jobs/).
+@router.post("/jobs/{job_id}/recommend-supplies")
+async def recommend_supplies_alias(job_id: UUID, regenerate: bool = False) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    from .. import supplies as _supplies
+    existing = await _supplies.list_supplies(job_id)
+    if existing and not regenerate:
+        return {"items": existing, "summary": _supplies.supplies_summary(existing)}
+    drafts = await _supplies.recommend_supplies({"id": str(job_id), **(await _job_or_404(job_id))})
+    saved = await _supplies.persist_supplies(job_id, drafts)
+    return {"items": saved, "summary": _supplies.supplies_summary(saved)}
+
+
+@router.post("/jobs/{job_id}/approve-supplies")
+async def approve_supplies_alias(job_id: UUID) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    from .. import supplies as _supplies
+    items = await _supplies.simulate_vendor_checkout(job_id)
+    if not items:
+        raise HTTPException(status_code=409, detail="no supplies to approve — recommend first")
+    return {"items": items, "summary": _supplies.supplies_summary(items)}
+
+
 @router.post("/jobs/{job_id}/proofs")
 async def post_proof_endpoint(job_id: UUID, payload: ProofPostRequest) -> dict[str, Any]:
     await _job_or_404(job_id)
