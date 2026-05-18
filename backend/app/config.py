@@ -55,5 +55,12 @@ class Settings(BaseSettings):
     gemini_model_fast: str = "gemini-3-flash-preview"
     gemini_model_pro: str = "gemini-3.1-pro-preview"
 
+    # ElevenLabs TTS for the synthesized "Ayush from CrewLoop" voice on
+    # demo calls. Falls back to silence if the key is absent.
+    elevenlabs_api_key: str | None = None
+    elevenlabs_voice_id: str = "Tu2hPdmCr8ZkKfSFXWyj"
+    elevenlabs_model_id: str = "eleven_turbo_v2_5"
+    elevenlabs_base_url: str = "https://api.elevenlabs.io/v1"
+
 
 settings = Settings()

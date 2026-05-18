@@ -275,6 +275,34 @@ CREATE TABLE IF NOT EXISTS proofs (
 );
 CREATE INDEX IF NOT EXISTS proofs_job_idx ON proofs (job_id);
 CREATE INDEX IF NOT EXISTS proofs_status_idx ON proofs (status);
+
+CREATE TABLE IF NOT EXISTS voice_calls (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id          uuid REFERENCES jobs(id) ON DELETE SET NULL,
+  contractor_id   uuid REFERENCES contractors(id) ON DELETE SET NULL,
+  contractor_name text,
+  scenario        text NOT NULL DEFAULT 'shift_offer',
+  status          text NOT NULL DEFAULT 'in_progress',
+  outcome         text,
+  total_seconds   integer NOT NULL DEFAULT 0,
+  started_at      timestamptz NOT NULL DEFAULT now(),
+  ended_at        timestamptz,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS voice_calls_job_idx ON voice_calls (job_id);
+
+CREATE TABLE IF NOT EXISTS voice_call_turns (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  call_id     uuid NOT NULL REFERENCES voice_calls(id) ON DELETE CASCADE,
+  turn_index  integer NOT NULL,
+  role        text NOT NULL CHECK (role IN ('ayush', 'contractor')),
+  text        text NOT NULL,
+  audio_path  text,
+  audio_bytes integer,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (call_id, turn_index)
+);
+CREATE INDEX IF NOT EXISTS voice_call_turns_call_idx ON voice_call_turns (call_id, turn_index);
 """
 
 

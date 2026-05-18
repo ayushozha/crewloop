@@ -1,6 +1,10 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+# Avoid slow entry-point scanning during local FastAPI/Pydantic startup.
+os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "1")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,6 +56,7 @@ app.include_router(contractors.router)
 app.include_router(chat.router)
 app.include_router(inventory.router)
 app.include_router(events.router)
+app.include_router(voice_call.router)
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
