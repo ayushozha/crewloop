@@ -92,6 +92,30 @@ CREATE TABLE IF NOT EXISTS inventory_items (
 CREATE INDEX IF NOT EXISTS inventory_items_category_idx ON inventory_items (category);
 CREATE INDEX IF NOT EXISTS inventory_items_on_hand_idx ON inventory_items (on_hand);
 
+CREATE TABLE IF NOT EXISTS event_supplies (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id          uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  inventory_item_id uuid REFERENCES inventory_items(id) ON DELETE SET NULL,
+  name              text NOT NULL,
+  qty               numeric(8,2) NOT NULL DEFAULT 1,
+  unit              text NOT NULL DEFAULT 'each',
+  vendor            text,
+  vendor_url        text,
+  unit_price        numeric(10,2) NOT NULL DEFAULT 0,
+  total_price       numeric(10,2) NOT NULL DEFAULT 0,
+  status            text NOT NULL DEFAULT 'recommended',
+  evidence_url      text,
+  evidence_eta      text,
+  evidence_note     text,
+  image_path        text,
+  notes             text,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  approved_at       timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS event_supplies_event_idx ON event_supplies (event_id);
+CREATE INDEX IF NOT EXISTS event_supplies_status_idx ON event_supplies (status);
+
 CREATE TABLE IF NOT EXISTS jobs (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   business_name   text NOT NULL,

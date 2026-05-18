@@ -6,11 +6,12 @@ front-end has a clean `/api/events` it can read without learning the older
 `/jobs/{id}` shape.
 """
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import db
+from .. import db, supplies
 
 
 router = APIRouter(prefix="/api/events", tags=["events"])
@@ -78,3 +79,50 @@ async def get_event(event_id: str) -> dict[str, Any]:
     if not row:
         raise HTTPException(status_code=404, detail="event not found")
     return _row_to_dict(row)
+
+
+# ---------------------------------------------------------------------------
+# Supplies sub-resource (spec §3 steps 9-10).
+# ---------------------------------------------------------------------------
+
+async def _event_or_404(event_id: str) -> dict[str, Any]:
+    sql = "SELECT * FROM jobs WHERE id = $1"
+    async with db.pool().acquire() as conn:
+        row = await conn.fetchrow(sql, event_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="event not found")
+    return _row_to_dict(row)
+
+
+@router.post("/{event_id}/supplies/recommend")
+async def recommend_event_supplies(event_id: str, regenerate: bool = False) -> dict[str, Any]:
+    """Return 3-5 recommended supplies for this event. Persists them as
+    'recommended' (replacing any prior recommendations) so the chat / panel
+    can show the same set on reload. Pass `regenerate=true` to force a fresh
+    Gemini call even when prior recommendations exist."""
+    event = await _event_or_404(event_id)
+    existing = await supplies.list_supplies(UUID(event_id))
+    if existing and not regenerate:
+        return {"event": event, "items": existing, "summary": supplies.supplies_summary(existing)}
+    drafts = await supplies.recommend_supplies(event)
+    saved = await supplies.persist_supplies(UUID(event_id), drafts)
+    return {"event": event, "items": saved, "summary": supplies.supplies_summary(saved)}
+
+
+@router.get("/{event_id}/supplies")
+async def list_event_supplies(event_id: str) -> dict[str, Any]:
+    event = await _event_or_404(event_id)
+    items = await supplies.list_supplies(UUID(event_id))
+    return {"event": event, "items": items, "summary": supplies.supplies_summary(items)}
+
+
+@router.post("/{event_id}/supplies/approve")
+async def approve_event_supplies(event_id: str) -> dict[str, Any]:
+    """Owner approves the recommended supply list. Flips every 'recommended'
+    row to 'approved' and attaches a Browser Use-style vendor evidence
+    object (URL, ETA window, one-line note) so the UI can render proof."""
+    event = await _event_or_404(event_id)
+    items = await supplies.simulate_vendor_checkout(UUID(event_id))
+    if not items:
+        raise HTTPException(status_code=409, detail="no supplies to approve — recommend first")
+    return {"event": event, "items": items, "summary": supplies.supplies_summary(items)}

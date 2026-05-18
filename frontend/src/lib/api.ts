@@ -8,13 +8,19 @@ import type {
   Message,
 } from "./types";
 
+const fallbackApiBaseUrl =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost")
+    ? "http://127.0.0.1:8000"
+    : "https://crewloop-api.ayushojha.com";
+
 /**
- * Public API base URL. Read from NEXT_PUBLIC_API_BASE_URL at build/run time so
- * a single Next build can target prod or local without recompiling.
+ * Public API base URL. Read from NEXT_PUBLIC_API_BASE_URL first; when omitted,
+ * local browser sessions talk to the local FastAPI server.
  */
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
-  "https://crewloop-api.ayushojha.com";
+  fallbackApiBaseUrl;
 
 export interface ChatActionChip {
   label: string;
@@ -40,6 +46,47 @@ export interface ChatResponse {
   intent?: string | null;
   event_plan?: ChatEventPlan | null;
   action_chips?: ChatActionChip[];
+}
+
+export interface SupplyItem {
+  id: string;
+  event_id: string;
+  inventory_item_id?: string | null;
+  name: string;
+  qty: number;
+  unit: string;
+  vendor: string | null;
+  vendor_url: string | null;
+  unit_price: number;
+  total_price: number;
+  status: "recommended" | "approved" | "ordered" | "delivered" | string;
+  evidence_url?: string | null;
+  evidence_eta?: string | null;
+  evidence_note?: string | null;
+  image_path?: string | null;
+  notes?: string | null;
+  approved_at?: string | null;
+}
+
+export interface SuppliesResponse {
+  event: { id: string; role: string; start_time: string; description?: string | null };
+  items: SupplyItem[];
+  summary: { count: number; total: number; vendors: string[]; status: string };
+}
+
+export interface EventListItem {
+  id: string;
+  business_name: string;
+  role: string;
+  description: string | null;
+  location: string;
+  start_time: string;
+  end_time: string;
+  pay_amount: number;
+  urgency: string;
+  required_skills: string[];
+  status: string;
+  created_at: string;
 }
 
 class ApiError extends Error {
@@ -131,6 +178,29 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  listEvents: (status?: string) =>
+    request<{ items: EventListItem[]; count: number }>(
+      `/api/events${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+    ),
+
+  getEvent: (eventId: string) =>
+    request<EventListItem>(`/api/events/${encodeURIComponent(eventId)}`),
+
+  recommendSupplies: (eventId: string, regenerate = false) =>
+    request<SuppliesResponse>(
+      `/api/events/${encodeURIComponent(eventId)}/supplies/recommend${regenerate ? "?regenerate=true" : ""}`,
+      { method: "POST" },
+    ),
+
+  listSupplies: (eventId: string) =>
+    request<SuppliesResponse>(`/api/events/${encodeURIComponent(eventId)}/supplies`),
+
+  approveSupplies: (eventId: string) =>
+    request<SuppliesResponse>(
+      `/api/events/${encodeURIComponent(eventId)}/supplies/approve`,
+      { method: "POST" },
+    ),
 
   // Dispatch-room workflow actions (parallel-session backend routes).
   dispatchAction: (
