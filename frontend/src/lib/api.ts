@@ -16,6 +16,32 @@ export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
   "https://crewloop-api.ayushojha.com";
 
+export interface ChatActionChip {
+  label: string;
+  say: string;
+}
+
+export interface ChatEventPlan {
+  event_name: string;
+  details: string;
+  event_date: string;
+  event_time: string;
+  location?: string | null;
+  staff_requirement: string;
+  responsibilities: string;
+  inventory_requirement: string;
+  estimated_labor: string;
+  invoice_amount: string;
+  approval_question: string;
+}
+
+export interface ChatResponse {
+  reply: string;
+  intent?: string | null;
+  event_plan?: ChatEventPlan | null;
+  action_chips?: ChatActionChip[];
+}
+
 class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -101,7 +127,7 @@ export const api = {
     turns: Array<{ role: "user" | "model" | "assistant"; text: string }>;
     attachments?: Array<{ mime_type: string; data: string; name?: string }>;
   }) =>
-    request<{ reply: string }>("/api/chat", {
+    request<ChatResponse>("/api/chat", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

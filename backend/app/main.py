@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .routes import browser, calls, chat, contractors, conversations, dispatch, inventory, jobs, sms, webhooks
+from .routes import browser, calls, chat, contractors, conversations, dispatch, events, inventory, jobs, sms, webhooks
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -51,6 +51,7 @@ app.include_router(jobs.router)
 app.include_router(contractors.router)
 app.include_router(chat.router)
 app.include_router(inventory.router)
+app.include_router(events.router)
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

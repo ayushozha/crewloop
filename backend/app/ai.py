@@ -13,8 +13,9 @@ awkwardness shows up in real time. SMS can tolerate flash.
 """
 from __future__ import annotations
 
+import json
 import logging
-from typing import Iterable
+from typing import Any, Iterable
 
 import httpx
 
@@ -72,6 +73,139 @@ If the owner just says "hi" with no job details, ask what they need staffed.
 """
 
 
+# ---------------------------------------------------------------------------
+# Structured "event intake" chat. This is the spec's section 3 flow:
+#   ask event type, ask timing, ask infer-roles, then show shortlist + approve.
+# The model returns a small JSON envelope so the chat UI can render chips and
+# event-draft cards. The CHAT_SYSTEM_PROMPT above still defines the voice; the
+# extra instruction below adds the structure.
+# ---------------------------------------------------------------------------
+
+EVENT_INTAKE_PROMPT_SUFFIX = """
+
+You ALSO follow a structured event-intake flow. Whenever the owner is describing or refining an event you need to staff, you return:
+- a short prose reply for the chat bubble (`reply_text`)
+- a partial `event_draft` of what you've parsed so far (any field can be null)
+- short `action_chips` the owner can tap instead of typing — give 2-4 options for whatever the next missing field is, OR `Approve shortlist` / `Replace one` once you've ranked candidates
+- a `shortlist` of contractors (just their names — the UI looks the actual roster up) ONLY when the event has enough detail (event type + timing + location) AND the owner has agreed you can rank
+- a 1-2 word `intent` so the UI knows what's happening: "intake_question" | "infer_roles" | "shortlist" | "approve_shortlist" | "dispatched" | "small_talk" | "other"
+
+Order of questions when intaking a new event:
+1. Event type (corporate dinner, wedding, gallery opening, brunch, party, etc.)
+2. Timing (date + time window) and guest count
+3. Whether to infer roles for you ("Infer roles for me" / "I'll specify")
+4. After inferring or accepting roles, present a shortlist and ask for approval
+
+Never ask more than ONE question per reply. Never repeat a question that has already been answered. If a field is already filled, don't ask about it again — move to the next one.
+
+If the owner is not describing an event (chitchat, asking about the roster, payments, etc.), set `intent` to "other" or "small_talk" and leave `event_draft`, `action_chips`, and `shortlist` empty / null."""
+
+
+CHAT_ACTION_SCHEMA: dict[str, Any] = {
+    "type": "OBJECT",
+    "properties": {
+        "reply_text": {"type": "STRING"},
+        "intent": {"type": "STRING"},
+        "event_draft": {
+            "type": "OBJECT",
+            "properties": {
+                "event_type": {"type": "STRING", "nullable": True},
+                "business_name": {"type": "STRING", "nullable": True},
+                "start_time": {"type": "STRING", "nullable": True},
+                "end_time": {"type": "STRING", "nullable": True},
+                "location": {"type": "STRING", "nullable": True},
+                "guest_count": {"type": "INTEGER", "nullable": True},
+                "pay_amount": {"type": "NUMBER", "nullable": True},
+                "urgency": {"type": "STRING", "nullable": True},
+                "required_roles": {"type": "ARRAY", "items": {"type": "STRING"}},
+            },
+            "nullable": True,
+        },
+        "action_chips": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "label": {"type": "STRING"},
+                    "say": {"type": "STRING"},
+                },
+                "required": ["label", "say"],
+            },
+        },
+        "shortlist": {
+            "type": "ARRAY",
+            "items": {"type": "STRING"},
+        },
+    },
+    "required": ["reply_text", "intent"],
+}
+
+
+async def generate_chat_action_reply(
+    turns: list[dict],
+    attachments: list[dict] | None = None,
+    *,
+    contractor_names: list[str] | None = None,
+    open_events: list[dict] | None = None,
+) -> dict[str, Any] | None:
+    """Structured chat that returns reply + event_draft + action_chips + shortlist.
+
+    `contractor_names` (optional) gets injected into the system prompt so the
+    model knows which names are actually on the roster — keeps the shortlist
+    grounded.
+
+    `open_events` (optional) is a list of {role, start_time, status} dicts so
+    the model can reference existing events in flight.
+    """
+    contents: list[dict] = []
+    for i, t in enumerate(turns):
+        role = "user" if t.get("role") == "user" else "model"
+        text = (t.get("text") or t.get("content") or "").strip()
+        is_last_user = role == "user" and i == len(turns) - 1
+        parts: list[dict] = []
+        if text:
+            parts.append({"text": text})
+        if is_last_user and attachments:
+            for att in attachments:
+                mt = att.get("mime_type")
+                data = att.get("data")
+                if mt and data:
+                    parts.append({"inlineData": {"mimeType": mt, "data": data}})
+        if not parts:
+            continue
+        contents.append({"role": role, "parts": parts})
+
+    if not contents:
+        return None
+
+    system_prompt = CHAT_SYSTEM_PROMPT + EVENT_INTAKE_PROMPT_SUFFIX
+    if contractor_names:
+        sample = ", ".join(contractor_names[:25])
+        system_prompt += (
+            f"\n\nRoster on hand (use these EXACT names in `shortlist`, never invent): {sample}."
+        )
+    if open_events:
+        lines = [f"- {e.get('role')} on {e.get('start_time')} ({e.get('status')})" for e in open_events[:8]]
+        system_prompt += "\n\nEvents already in flight that you should NOT duplicate:\n" + "\n".join(lines)
+
+    raw = await _call_gemini_json(
+        model=settings.gemini_model_pro,
+        system_prompt=system_prompt,
+        contents=contents,
+        response_schema=CHAT_ACTION_SCHEMA,
+        max_output_tokens=2200,
+        temperature=0.55,
+    )
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("structured chat reply not valid JSON: %r", raw[:200])
+        return {"reply_text": raw, "intent": "other"}
+    return parsed
+
+
 async def generate_chat_reply(
     turns: list[dict],
     attachments: list[dict] | None = None,
@@ -113,6 +247,46 @@ async def generate_chat_reply(
         temperature=0.6,
         thinking_budget=None,  # pro requires thinking mode
     )
+
+
+async def _call_gemini_json(*, model: str, system_prompt: str, contents: list[dict],
+                            response_schema: dict[str, Any],
+                            max_output_tokens: int = 1800,
+                            temperature: float = 0.55) -> str | None:
+    """Same as _call_gemini but forces JSON output matching `response_schema`.
+    Returns the raw JSON text (the caller calls json.loads)."""
+    if not settings.gemini_api_key:
+        logger.info("no gemini_api_key set; skipping AI generation")
+        return None
+    payload = {
+        "system_instruction": {"parts": [{"text": system_prompt}]},
+        "contents": contents,
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_output_tokens,
+            "responseMimeType": "application/json",
+            "responseSchema": response_schema,
+        },
+    }
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent?key={settings.gemini_api_key}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as c:
+            r = await c.post(url, json=payload)
+        if r.status_code >= 400:
+            logger.warning("gemini-json %s %s: %s", model, r.status_code, r.text[:400])
+            return None
+        data = r.json()
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        return text.strip() or None
+    except (KeyError, IndexError, ValueError):
+        logger.exception("malformed gemini-json response (model=%s)", model)
+        return None
+    except httpx.HTTPError:
+        logger.exception("gemini-json request failed (model=%s)", model)
+        return None
 
 
 async def _call_gemini(*, model: str, system_prompt: str, contents: list[dict],

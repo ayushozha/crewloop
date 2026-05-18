@@ -23,9 +23,9 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "CrewLoop — The AI dispatcher for contractor work",
+  title: "CrewLoop — The action OS for small business",
   description:
-    "CrewLoop is the AI dispatcher for contractor-heavy small businesses. It finds the right person, texts or calls them based on urgency, schedules the shift, verifies they showed up — and releases payment only when the work is done.",
+    "CrewLoop turns small business requests into finished operations: source evidence, texts, calls, emails, payment rules, proof, and an audit timeline.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

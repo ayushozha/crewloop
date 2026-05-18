@@ -6,52 +6,53 @@ import { Nav } from "@/components/Nav";
 const LOOP_STEPS = [
   {
     n: "01 · Intake",
-    title: "Parse the text into a real job.",
-    body: "Role, time, location, pay, urgency, skills — extracted from a single SMS. One follow-up question only if something is missing.",
+    title: "Turn the request into work.",
+    body: "Chat or SMS becomes structured: what is needed, where, by when, budget, urgency, and the one missing detail if clarification is required.",
   },
   {
-    n: "02 · Match",
-    title: "Rank your roster, not strangers.",
-    body: "Match on skill, distance, availability, reliability, and response speed. Backups identified up front.",
+    n: "02 · Source",
+    title: "Check the outside source.",
+    body: "Browser Use reads staffing pages, vendor portals, or event briefs, then saves screenshot and source evidence before the agent acts.",
   },
   {
-    n: "03 · Reach out",
-    title: "Text first. Call when it's urgent.",
-    body: "Top match gets a text. If urgent or unanswered, CrewLoop calls. Replies — \"yes,\" \"what's the pay\" — are handled inline.",
+    n: "03 · Match",
+    title: "Choose the right operator.",
+    body: "Rank contractors by skill, availability, distance, reliability, rate, and memory. For vendors, use the same loop to pick the approved source.",
   },
   {
-    n: "04 · Schedule",
-    title: "Lock the shift the moment they accept.",
-    body: "Confirmation goes to the contractor, summary email to the owner, check-in reminder set, backup queued just in case.",
+    n: "04 · Reach out",
+    title: "Use the right channel.",
+    body: "Text first, call when the shift is urgent, email vendors for invoices or confirmations, and log every response.",
   },
   {
-    n: "05 · Verify",
-    title: "Proof of work, not promises.",
-    body: "SMS check-in, photo, QR scan, or manager sign-off. Suspicious or missing proof gets flagged before payday.",
+    n: "05 · Commit",
+    title: "Lock the plan once someone says yes.",
+    body: "Create the schedule, reserve the item, attach the invoice, and send confirmations so the owner can see exactly what changed.",
   },
   {
-    n: "06 · Hold",
-    title: "Pay is escrowed, not sent.",
-    body: "A payment hold is created the second a contractor accepts. Capped, conditional, and never released without proof.",
+    n: "06 · Money",
+    title: "Hold or release payment with rules.",
+    body: "Sponge and Stripe state tracks caps, proof required, owner approval, receipts, and blocked releases.",
   },
   {
-    n: "07 · Approve",
-    title: "One tap to release.",
-    body: "You see the proof, the receipt preview, and the rule that triggered. Approve and the money moves.",
+    n: "07 · Proof",
+    title: "Collect evidence before closing.",
+    body: "SMS check-in, photo, source screenshot, timesheet, or manager approval becomes part of the audit trail.",
   },
   {
     n: "08 · Learn",
-    title: "Your roster gets smarter every job.",
-    body: "Reliability, response speed, no-shows, and notes update silently. Tomorrow's top match is better than today's.",
+    title: "Make the next operation easier.",
+    body: "Response speed, reliability, vendor notes, and source evidence become memory for the next request.",
   },
 ] as const;
 
 const INDUSTRIES = [
-  "Event staffing",
+  "Event operators",
   "Catering",
+  "Venue teams",
   "Cleaning crews",
-  "Moving companies",
-  "Home services",
+  "Moving crews",
+  "Mobile services",
   "Photographers & production",
   "Hospitality teams",
   "Security staffing",
@@ -82,26 +83,26 @@ function Hero() {
       <div className="mx-auto max-w-[1180px]">
         <div className="mb-7 flex items-center gap-2.5">
           <span className="inline-block h-[7px] w-[7px] rounded-full bg-accent dot-pulse" aria-hidden />
-          <span className="eyebrow">AI dispatcher · contractor staffing</span>
+          <span className="eyebrow">Small business action OS · 2-minute dispatch demo</span>
         </div>
 
         <h1
           className="font-display max-w-[14ch] text-[clamp(44px,7.4vw,104px)] leading-[0.98] tracking-[-0.025em] mb-6 text-ink"
         >
-          Your bartender canceled. <em className="not-italic italic text-accent">Emma&apos;s behind the bar by 6.</em>
+          CrewLoop is the action OS for small business.
         </h1>
         <p className="max-w-[54ch] text-[clamp(17px,1.6vw,20px)] leading-[1.5] text-ink-2 mb-9">
-          CrewLoop is the AI dispatcher for contractor-heavy small businesses. It finds the right person, texts or
-          calls them based on urgency, schedules the shift, verifies they showed up — and releases payment only when
-          the work is done.
+          Owners ask in chat. CrewLoop parses the request, checks sources with Browser Use, texts or calls the right
+          person, sends the needed emails, tracks payment rules, collects proof, and writes the audit trail. The demo
+          shows the simplest version: an urgent bartender shift covered end to end.
         </p>
 
         <div className="flex flex-wrap items-center gap-3">
           <a
-            href="#cta"
+            href="/browser-import"
             className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-panel transition hover:-translate-y-px hover:bg-black"
           >
-            Request a demo
+            Open demo flow
             <ArrowIcon />
           </a>
           <a
@@ -112,7 +113,7 @@ function Hero() {
               <circle cx="6" cy="6" r="5.2" stroke="currentColor" strokeWidth="1.3" />
               <path d="M5 4l3 2-3 2V4Z" fill="currentColor" />
             </svg>
-            Watch the 60-second loop
+            See the loop
           </a>
         </div>
 
@@ -164,13 +165,13 @@ function SmsCard() {
       </div>
 
       <div className="max-w-[88%] self-start rounded-2xl rounded-bl-md bg-[#F0EDE3] px-3.5 py-2.5 text-[14px] leading-snug text-ink">
-        Need a bartender tonight 6–10 PM in SoMa. Must have event experience. Pay $120.
+        Need a bartender tonight 6–10 PM in SoMa. Source page has the shift details. Pay $120.
         <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-urgent-soft px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-urgent">
           ● Urgent
         </span>
       </div>
       <div className="max-w-[88%] self-end rounded-2xl rounded-br-md bg-ink px-3.5 py-2.5 text-[14px] leading-snug text-panel">
-        On it. Parsing the request and ranking 4 bartenders within 3 miles.
+        On it. Importing source evidence and ranking 4 bartenders within 3 miles.
       </div>
       <div className="max-w-[88%] self-end rounded-2xl rounded-br-md bg-ink px-3.5 py-2.5 text-[14px] leading-snug text-panel">
         Emma looks best — 98% reliability, available, $30/hr. Texting now, calling in 90s if no reply.
@@ -197,8 +198,8 @@ interface MatchRow {
 const MATCH_ROWS: MatchRow[] = [
   { initial: "E", name: "Emma Carter", meta: "2.1 mi · 98% reliable · $30/hr", pill: "Texting", variant: "featured", pillVariant: "green", avAccent: true },
   { initial: "M", name: "Madison Reed", meta: "3.4 mi · 61% reliable · $28/hr", pill: "Backup", variant: "default", pillVariant: "dim" },
-  { initial: "L", name: "Luis Romero", meta: "Server · skill mismatch", pill: "Skipped", variant: "default", pillVariant: "dim" },
-  { initial: "A", name: "Ashley Brooks", meta: "Unavailable tonight", pill: "—", variant: "default", pillVariant: "dim" },
+  { initial: "A", name: "Ashley Brooks", meta: "Guest service · partial match", pill: "Partial", variant: "default", pillVariant: "dim" },
+  { initial: "L", name: "Luis Romero", meta: "Moving crew · skill mismatch", pill: "Skipped", variant: "default", pillVariant: "dim" },
 ];
 
 function MatchCard() {
@@ -255,11 +256,11 @@ interface TimelineRow {
 }
 
 const TIMELINE_ROWS: TimelineRow[] = [
+  { state: "done", text: <><b className="font-medium text-ink">Source imported</b> · Bay Events shift page</>, time: "5:42" },
   { state: "done", text: <><b className="font-medium text-ink">Request parsed</b> · bartender, SoMa, $120</>, time: "5:42" },
   { state: "done", text: <><b className="font-medium text-ink">Emma texted</b> · top match</>, time: "5:43" },
   { state: "done", text: <><b className="font-medium text-ink">Call placed</b> · urgent escalation</>, time: "5:44" },
   { state: "live", text: <><b className="font-medium text-ink">Confirming shift</b> with Emma…</>, time: "5:45" },
-  { state: "pending", text: <span className="text-muted">Owner email summary</span>, time: "—" },
   { state: "pending", text: <span className="text-muted">Payment hold · $120</span>, time: "—" },
 ];
 
@@ -330,11 +331,11 @@ function HowItWorks() {
         <div className="mb-12 grid max-w-[760px] gap-3.5">
           <span className="eyebrow">The loop</span>
           <h2 className="font-display text-[clamp(34px,4.6vw,56px)] leading-[1.02] tracking-tight">
-            One text in. <em className="not-italic italic text-accent">A staffed, verified, paid shift out.</em>
+            One request in. <em className="not-italic italic text-accent">A verified action out.</em>
           </h2>
           <p className="max-w-[56ch] text-[17px] leading-relaxed text-ink-2">
-            CrewLoop is built around a single closed loop. Every step is automated, logged, and reversible — so the
-            owner only steps in for one decision: <em className="not-italic italic">approve the release</em>.
+            CrewLoop is intentionally one loop, not a pile of apps. The same primitives handle urgent staffing today
+            and later support vendor emails, inventory purchases, invoices, payments, proof, and final reports.
           </p>
         </div>
 
@@ -361,17 +362,18 @@ function QuoteStrip() {
   return (
     <div className="mt-12 grid grid-cols-1 items-center gap-8 rounded-[14px] bg-ink p-6 md:grid-cols-[1.2fr_1fr] md:p-8 text-[#F0EDE3]">
       <div>
-        <div className="font-display text-[clamp(22px,2.4vw,30px)] leading-[1.25] tracking-tight">
-          &ldquo;Need a bartender tonight 6–10 PM in SoMa. Must have event experience. Pay{" "}
+          <div className="font-display text-[clamp(22px,2.4vw,30px)] leading-[1.25] tracking-tight">
+          &ldquo;Need a bartender tonight 6–10 PM in SoMa. Source page has the event details. Pay{" "}
           <span className="font-display text-accent text-[1.1em]">$120</span>. Urgent.&rdquo;
         </div>
         <div className="mt-3.5 font-mono text-[11px] uppercase tracking-widest text-[#8C887D]">
-          — One inbound SMS · the entire input CrewLoop needs
+          — One owner request · enough context to start the operation
         </div>
       </div>
       <div className="flex flex-col gap-2.5">
         {[
-          ["00:02", "4 contractors ranked, Emma selected"],
+          ["00:02", "Browser source captured"],
+          ["00:05", "4 contractors ranked, Emma selected"],
           ["00:18", "SMS sent to Emma · call queued"],
           ["01:42", "Emma confirmed · shift locked"],
           ["22:07", "Proof received · $120 released"],
@@ -398,11 +400,11 @@ function WhoItsFor() {
         <div className="mb-12 max-w-[760px] grid gap-3.5">
           <span className="eyebrow">Built for</span>
           <h2 className="font-display text-[clamp(34px,4.6vw,56px)] leading-[1.02] tracking-tight">
-            Businesses that run on a <em className="not-italic italic text-accent">group chat and a spreadsheet.</em>
+            Businesses that run through <em className="not-italic italic text-accent">texts, tabs, emails, and payments.</em>
           </h2>
           <p className="max-w-[56ch] text-[17px] leading-relaxed text-ink-2">
-            If your staffing happens in a contractor list and your &ldquo;system&rdquo; is a flurry of texts every
-            week, CrewLoop is for you.
+            Use it where the owner needs action, not another dashboard: staff an event, ask a vendor for an invoice,
+            order supplies, confirm proof, and release payment from one audited timeline.
           </p>
         </div>
         <div className="flex flex-wrap gap-2.5">
@@ -420,7 +422,7 @@ function WhoItsFor() {
   );
 }
 
-/* ---------------------------- Payment rule ------------------------------ */
+/* ---------------------------- Guardrails -------------------------------- */
 
 function PaymentRule() {
   return (
@@ -428,24 +430,24 @@ function PaymentRule() {
       <div className="mx-auto max-w-[1180px]">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.05fr_1fr] items-stretch">
           <div>
-            <span className="eyebrow">Conditional payout</span>
+            <span className="eyebrow">Actions with guardrails</span>
             <h3 className="font-display mt-3.5 text-[clamp(28px,3.4vw,40px)] leading-[1.05] tracking-tight">
-              Money moves <em className="not-italic italic text-accent">only when the work is done.</em>
+              Calls, emails, browser actions, and payments stay accountable.
             </h3>
             <p className="mt-4 max-w-[48ch] text-base leading-relaxed text-ink-2">
-              Every dispatch creates an escrowed hold with a release rule attached. The rule is plain English, but
-              enforced like code — capped pay, identity match, proof required, owner approval required.
+              Every operation creates a timeline with source evidence, messages, approvals, and payment state. The
+              agent can move fast, but releases are capped and conditional.
             </p>
             <p className="mt-4 max-w-[48ch] text-base leading-relaxed text-ink-2">
-              Missing proof? Wrong person checked in? The release is blocked automatically and you&apos;re alerted
-              before payday.
+              Missing proof? Wrong person checked in? Unapproved vendor invoice? The release is blocked and the owner
+              sees why.
             </p>
             <div className="mt-2 flex flex-wrap gap-3">
               <a
-                href="#cta"
+                href="/browser-import"
                 className="inline-flex items-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-medium text-ink transition hover:-translate-y-px hover:border-ink"
               >
-                See the rule engine
+                Open the live workflow
                 <ArrowIcon />
               </a>
             </div>
@@ -509,7 +511,7 @@ function RuleCard() {
       </div>
 
       <div className="relative flex items-center justify-between border-t border-line-2 pt-3.5 text-[12.5px] text-muted">
-        <span>Receipt #R-4218 · Stripe</span>
+        <span>Receipt #R-4218 · Sponge + Stripe</span>
         <span className="font-mono">payment.released</span>
       </div>
     </div>
@@ -524,19 +526,18 @@ function ClosingCta() {
       <div className="mx-auto max-w-[1180px]">
         <div className="grid grid-cols-1 items-end gap-8 rounded-3xl border border-line bg-panel p-10 md:p-16 md:grid-cols-[1.2fr_auto]">
           <h2 className="font-display m-0 max-w-[18ch] text-[clamp(34px,4.4vw,56px)] leading-[1.0] tracking-tight">
-            Stop staffing by group chat. <em className="not-italic italic text-accent">Start running a dispatch loop.</em>
+            Stop juggling texts, tabs, and payments. <em className="not-italic italic text-accent">Run one action loop.</em>
           </h2>
           <div className="flex flex-col items-start gap-2.5 md:items-end">
             <a
-              href="#"
+              href="/browser-import"
               className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-3.5 text-[15px] font-medium text-panel transition hover:-translate-y-px hover:bg-black"
             >
-              Request a demo
+              Open demo flow
               <ArrowIcon />
             </a>
             <small className="text-[13px] text-muted">
-              Or text <span className="font-mono text-ink">+1 (415) 992-9589</span> with a real job — see what
-              CrewLoop does with it.
+              Start with Browser Import, then open Dispatch Room to see the full 2-minute flow.
             </small>
           </div>
         </div>
@@ -556,13 +557,13 @@ function Footer() {
             <BrandMark />
             <b className="text-[17px] font-medium text-ink">CrewLoop</b>
           </div>
-          <div className="max-w-[34ch]">The AI dispatcher for contractor-heavy small businesses. © 2026 CrewLoop, Inc.</div>
+          <div className="max-w-[34ch]">The action layer for small business operations. © 2026 CrewLoop, Inc.</div>
         </div>
         <div className="flex flex-wrap gap-12">
           <div>
             <b className="mb-2.5 block text-[13px] font-medium text-ink">Product</b>
             <a href="#how" className="block mb-1.5 text-ink-2 hover:text-ink">How it works</a>
-            <a href="#rule" className="block mb-1.5 text-ink-2 hover:text-ink">Payment rule</a>
+            <a href="#rule" className="block mb-1.5 text-ink-2 hover:text-ink">Action guardrails</a>
             <a href="#who" className="block mb-1.5 text-ink-2 hover:text-ink">Industries</a>
             <Link href="/dashboard" className="block mb-1.5 text-ink-2 hover:text-ink">Dashboard</Link>
           </div>

@@ -34,17 +34,17 @@ export function Nav() {
             Who it&apos;s for
           </a>
           <a href="#rule" className="text-sm text-ink-2 hover:text-ink">
-            Payment rule
+            Guardrails
           </a>
           <Link href="/dashboard" className="text-sm text-ink-2 hover:text-ink">
             Dashboard
           </Link>
         </nav>
         <a
-          href="#cta"
+          href="/browser-import"
           className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-panel transition hover:-translate-y-px hover:bg-black"
         >
-          Request a demo
+          Open demo
           <ArrowIcon />
         </a>
       </div>

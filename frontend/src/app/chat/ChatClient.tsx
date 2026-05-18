@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/Brand";
-import { api } from "@/lib/api";
+import { api, type ChatEventPlan } from "@/lib/api";
 
 /* ============================== types =============================== */
 
@@ -29,12 +29,16 @@ interface ChatMessage {
 }
 
 type AgentCard =
+  | ({
+      kind: "event_plan";
+      actions: Array<{ label: string; say: string; variant?: "primary" | "ghost" }>;
+    } & ChatEventPlan)
   | {
       kind: "matches";
       title: string;
       tag: string;
       rows: Array<{ initial: string; name: string; meta: string; pill: string; pillVariant: "green" | "dim"; top?: boolean; tint?: "maya" }>;
-      actions: Array<{ label: string; variant?: "primary" | "ghost" }>;
+      actions: Array<{ label: string; say?: string; variant?: "primary" | "ghost" }>;
     }
   | {
       kind: "outreach";
@@ -57,17 +61,8 @@ type AgentCard =
       unit: string;
       label: string;
       rules: Array<{ text: string; time: string; done: boolean }>;
-      actions: Array<{ label: string; variant?: "primary" | "ghost" }>;
+      actions: Array<{ label: string; say?: string; variant?: "primary" | "ghost" }>;
     };
-
-/* ============================== mock asset =============================== */
-
-/* SVG bar mockup for the seed image attachment, inlined as a data URI. */
-const BAR_SVG =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 140 100'><defs><linearGradient id='g' x1='0' x2='0' y1='0' y2='1'><stop offset='0' stop-color='#362d22'/><stop offset='1' stop-color='#191510'/></linearGradient></defs><rect width='140' height='100' fill='url(#g)'/><rect x='10' y='62' width='120' height='28' fill='#5e4a35' rx='2'/><rect x='10' y='58' width='120' height='6' fill='#7a6044' rx='1'/><circle cx='30' cy='40' r='3' fill='#f0c98a'/><circle cx='110' cy='38' r='4' fill='#f0c98a'/><circle cx='70' cy='30' r='2.5' fill='#f0c98a'/><rect x='22' y='44' width='8' height='14' fill='#463323'/><rect x='34' y='42' width='8' height='16' fill='#463323'/><rect x='100' y='42' width='9' height='16' fill='#463323'/><rect x='112' y='44' width='8' height='14' fill='#463323'/></svg>`,
-  );
 
 /* ============================== seed thread =============================== */
 
@@ -75,125 +70,41 @@ const SEED_MESSAGES: ChatMessage[] = [
   {
     id: "u-1",
     role: "user",
-    text: "Our bartender canceled. Need a replacement tonight 6–10 PM in SoMa. Must have event experience. Pay $120.",
+    text: "We have a corporate dinner this Saturday for 80 guests in SoMa. Need a 10-person crew, supplies, and an invoice.",
     ts: "5:42 PM",
   },
   {
     id: "a-1",
     role: "agent",
-    text:
-      "On it. Parsing this as a bartender shift, **6–10 PM tonight, SoMa, $120**, marked urgent. I'm ranking your 11 bartenders — should I prioritize **event experience** or **closest available**?",
+    text: "Here’s the concise event plan I inferred. If this looks right, approve it and I’ll move to crew shortlisting.",
     ts: "5:42 PM",
     card: {
-      kind: "matches",
-      title: "Top 3 matches",
-      tag: "re-ranked · 1.8s",
-      rows: [
-        { initial: "M", name: "Maya Okafor", meta: "2.1 mi · 98% reliable · $30/hr · 4 events", pill: "Recommend", pillVariant: "green", top: true, tint: "maya" },
-        { initial: "K", name: "Kai Nakamura", meta: "2.6 mi · 93% reliable · $38/hr · 7 events", pill: "Backup", pillVariant: "dim" },
-        { initial: "C", name: "Chris Patel", meta: "3.4 mi · 61% reliable · $28/hr", pill: "Hold", pillVariant: "dim" },
-      ],
+      kind: "event_plan",
+      event_name: "Corporate dinner",
+      details: "80-guest corporate dinner in SoMa, San Francisco.",
+      event_date: "This Saturday",
+      event_time: "6:00 PM - 11:00 PM",
+      location: "SoMa, San Francisco",
+      staff_requirement: "10 staff: 2 bartenders, 4 servers, 2 setup crew, 1 event lead, 1 cleanup lead.",
+      responsibilities: "Setup, food service, bartending, cleanup, and event lead oversight.",
+      inventory_requirement: "100 compostable cups, 100 napkins, 4 bags of ice, 2 tablecloths, bartender tool kit rental.",
+      estimated_labor: "$1,450",
+      invoice_amount: "$1,756",
+      approval_question: "Approve this plan so I can shortlist the crew and start the next steps?",
       actions: [
-        { label: "Text Maya now", variant: "primary" },
-        { label: "Show all 11", variant: "ghost" },
+        { label: "Approve plan", say: "Approve this event plan", variant: "primary" },
+        { label: "Edit staff", say: "Change the staff requirement", variant: "ghost" },
+        { label: "Change budget", say: "Change the invoice amount", variant: "ghost" },
       ],
     },
-  },
-  {
-    id: "u-2",
-    role: "user",
-    text: "Yes — text Maya. Here's the event brief and a photo of the bar setup so she knows what she's walking into.",
-    ts: "5:43 PM",
-    attachments: [
-      { name: "bar-setup.jpg", mime_type: "image/svg+xml", data: "", preview_url: BAR_SVG },
-      { name: "Bay-Events-Brief.pdf", mime_type: "application/pdf", data: "" },
-    ],
-  },
-  {
-    id: "a-2",
-    role: "agent",
-    text:
-      "Got it. Read the brief — it's a 60-guest cocktail reception with a signature menu (3 drinks). I'll pass the photo and a one-line summary to Maya so she's prepped before she replies.",
-    ts: "5:43 PM",
-  },
-  {
-    id: "a-3",
-    role: "agent",
-    text: "SMS sent to Maya. Because the job is urgent, I'll call her in **90 seconds** if she hasn't replied.",
-    ts: "5:43 PM",
-    card: {
-      kind: "outreach",
-      title: "Outreach · Maya Okafor",
-      tag: "SMS via AgentPhone",
-      body:
-        "\"Hi Maya — Bay Events has a 4hr bartending shift tonight, 6–10 PM in SoMa, $120 flat. Cocktail reception, 60 guests, signature menu. Brief + bar photo attached. Reply **YES** to lock it in.\"",
-      chips: [
-        { label: "delivered · 5:43 PM" },
-        { label: "call in 90s", variant: "dim" },
-      ],
-    },
-  },
-  {
-    id: "u-3",
-    role: "user",
-    text: "She didn't reply yet — go ahead and call her, and tell her the pay can flex to $135 if she can be there by 5:55.",
-    ts: "5:44 PM",
-    voice: { duration: "0:18" },
-  },
-  {
-    id: "a-4",
-    role: "agent",
-    ts: "5:44 PM",
-    card: {
-      kind: "call",
-      title: "Calling Maya Okafor",
-      subtitle: "AgentPhone · urgent escalation · $135 cap noted",
-      duration: "00:42",
-    },
-  },
-  {
-    id: "a-5",
-    role: "agent",
-    text:
-      "✓ Maya picked up. **Confirmed at $135, arriving 5:55 PM.** I've scheduled the shift, queued Kai as backup, and sent her the brief + venue photo. Owner summary emailed to you.",
-    ts: "5:45 PM",
-    card: {
-      kind: "payment",
-      title: "Payment hold created",
-      tag: "JOB #4218 · Sponge",
-      amount: "$135",
-      unit: ".00",
-      label: "Bartender · 4hr",
-      rules: [
-        { text: "Contractor accepted", time: "5:45 PM", done: true },
-        { text: "Contractor checked in", time: "—", done: false },
-        { text: "Proof submitted", time: "—", done: false },
-        { text: "Owner approves release", time: "—", done: false },
-      ],
-      actions: [
-        { label: "View dispatch room", variant: "ghost" },
-        { label: "Edit release rule", variant: "ghost" },
-      ],
-    },
-  },
-  {
-    id: "a-6",
-    role: "agent",
-    ts: "5:45 PM",
-    suggestions: [
-      "Add a backup if Maya is late",
-      "Send Maya parking instructions",
-      "Notify Bay Events host",
-      "Cap tips at 20%",
-    ],
   },
 ];
 
 const THREADS = [
-  { id: "tonight", title: "Tonight's bartender", sub: "Maya confirmed · proof pending", time: "now", badge: "1", active: true },
-  { id: "fri-catering", title: "Friday catering — 2 servers", sub: "Drafted SMS, awaiting approval", time: "2h" },
-  { id: "pier-39", title: "Setup crew · Pier 39", sub: "Released $340 to Jordan", time: "Mon" },
-  { id: "roster", title: "Roster cleanup", sub: "Flagged 2 no-show contractors", time: "May 9" },
+  { id: "corp-dinner", title: "Corporate dinner", sub: "Plan ready · approval needed", time: "now", badge: "1", active: true },
+  { id: "fri-catering", title: "Friday catering", sub: "Crew shortlist drafted", time: "2h" },
+  { id: "vendor-order", title: "Vendor supplies", sub: "Browser Use found pickup", time: "Mon" },
+  { id: "roster", title: "Roster memory", sub: "Reliability scores refreshed", time: "May 9" },
 ];
 
 /* ============================== utils =============================== */
@@ -231,6 +142,16 @@ async function fileToBase64(file: File): Promise<{ data: string; preview_url: st
   return { data, preview_url };
 }
 
+function cardFromEventPlan(plan: ChatEventPlan, actions: Array<{ label: string; say: string }> = []): AgentCard {
+  return {
+    kind: "event_plan",
+    ...plan,
+    actions: actions.length
+      ? actions.map((action, index) => ({ ...action, variant: index === 0 ? "primary" : "ghost" }))
+      : [{ label: "Approve plan", say: "Approve this event plan", variant: "primary" }],
+  };
+}
+
 /* ============================== component =============================== */
 
 export function ChatClient() {
@@ -263,17 +184,17 @@ export function ChatClient() {
   // Fake in-call timer
   useEffect(() => {
     if (!inCall) {
-      setCallTime("00:02");
-      return;
+      const id = window.setTimeout(() => setCallTime("00:02"), 0);
+      return () => window.clearTimeout(id);
     }
     const start = Date.now();
-    const id = setInterval(() => {
+    const id = window.setInterval(() => {
       const s = Math.floor((Date.now() - start) / 1000) + 2;
       const mm = Math.floor(s / 60).toString().padStart(2, "0");
       const ss = (s % 60).toString().padStart(2, "0");
       setCallTime(`${mm}:${ss}`);
     }, 1000);
-    return () => clearInterval(id);
+    return () => window.clearInterval(id);
   }, [inCall]);
 
   const send = useCallback(async () => {
@@ -304,10 +225,13 @@ export function ChatClient() {
       const apiAttachments = sentAttachments
         .filter((a) => a.data) // real uploads only; demo seed images have empty data
         .map((a) => ({ mime_type: a.mime_type, data: a.data, name: a.name }));
-      const { reply } = await api.chat({ turns, attachments: apiAttachments });
+      const response = await api.chat({ turns, attachments: apiAttachments });
+      const card = response.event_plan
+        ? cardFromEventPlan(response.event_plan, response.action_chips ?? [])
+        : undefined;
       setMessages((prev) => [
         ...prev,
-        { id: `a-${Date.now()}`, role: "agent", text: reply, ts: nowStr() },
+        { id: `a-${Date.now()}`, role: "agent", text: response.reply, card, ts: nowStr() },
       ]);
     } catch (e) {
       const detail = e instanceof Error ? e.message : "Loop is offline";
@@ -498,33 +422,50 @@ interface ChatColumnProps {
   callTime: string;
 }
 
-function ChatColumn(p: ChatColumnProps) {
+function ChatColumn({
+  messages,
+  draft,
+  setDraft,
+  pending,
+  setPending,
+  sending,
+  send,
+  onKeyDown,
+  streamRef,
+  textareaRef,
+  fileInputRef,
+  imageInputRef,
+  handleFiles,
+  inCall,
+  setInCall,
+  callTime,
+}: ChatColumnProps) {
   return (
     <section className="flex min-w-0 flex-col bg-bg">
-      <ChatHeader inCall={p.inCall} setInCall={p.setInCall} callTime={p.callTime} />
+      <ChatHeader inCall={inCall} setInCall={setInCall} callTime={callTime} />
 
-      <div ref={p.streamRef} className="flex-1 overflow-y-auto px-5 pb-6 pt-8 md:px-9">
+      <div ref={streamRef} className="flex-1 overflow-y-auto px-5 pb-6 pt-8 md:px-9">
         <div className="mx-auto flex max-w-[780px] flex-col gap-[18px]">
           <Daybreak>Today · 5:42 PM PT</Daybreak>
-          {p.messages.map((m) => (
-            <MessageBubble key={m.id} msg={m} onSuggestion={(s) => p.setDraft(s)} />
+          {messages.map((m) => (
+            <MessageBubble key={m.id} msg={m} onSuggestion={(s) => setDraft(s)} />
           ))}
-          {p.sending && <TypingIndicator />}
+          {sending && <TypingIndicator />}
         </div>
       </div>
 
       <Composer
-        draft={p.draft}
-        setDraft={p.setDraft}
-        pending={p.pending}
-        setPending={p.setPending}
-        send={p.send}
-        sending={p.sending}
-        onKeyDown={p.onKeyDown}
-        textareaRef={p.textareaRef}
-        fileInputRef={p.fileInputRef}
-        imageInputRef={p.imageInputRef}
-        handleFiles={p.handleFiles}
+        draft={draft}
+        setDraft={setDraft}
+        pending={pending}
+        setPending={setPending}
+        send={send}
+        sending={sending}
+        onKeyDown={onKeyDown}
+        textareaRef={textareaRef}
+        fileInputRef={fileInputRef}
+        imageInputRef={imageInputRef}
+        handleFiles={handleFiles}
       />
     </section>
   );
@@ -679,7 +620,7 @@ function MessageBubble({ msg, onSuggestion }: { msg: ChatMessage; onSuggestion: 
           </div>
         ) : null}
 
-        {msg.card && <Card card={msg.card} />}
+        {msg.card && <Card card={msg.card} onAction={onSuggestion} />}
 
         <MetaRow ts={msg.ts} isUser={isUser} transcribed={!!msg.voice} />
       </div>
@@ -782,7 +723,46 @@ function VoiceBubble({ duration, isUser }: { duration: string; isUser: boolean }
 
 /* ============================== cards =============================== */
 
-function Card({ card }: { card: AgentCard }) {
+function Card({ card, onAction }: { card: AgentCard; onAction?: (say: string) => void }) {
+  if (card.kind === "event_plan") {
+    return (
+      <div className="w-full max-w-[580px] overflow-hidden rounded-[18px] border border-[rgba(62,124,78,0.22)] bg-white shadow-[0_1px_0_rgba(22,20,16,0.02),0_14px_34px_-24px_rgba(22,20,16,0.2)]">
+        <div className="border-b border-line-2 bg-accent-soft px-4 py-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent">Event plan</p>
+              <h4 className="m-0 mt-1 text-[18px] font-semibold leading-tight text-ink">{card.event_name}</h4>
+            </div>
+            <Pill variant="green">Ready for approval</Pill>
+          </div>
+        </div>
+
+        <div className="grid gap-3 p-4 text-[13px] text-ink-2 sm:grid-cols-2">
+          <PlanField label="Details" value={card.details} wide />
+          <PlanField label="Date" value={card.event_date} />
+          <PlanField label="Time" value={card.event_time} />
+          <PlanField label="Location" value={card.location ?? "TBD"} />
+          <PlanField label="Estimated labor" value={card.estimated_labor} />
+          <PlanField label="Staff requirement" value={card.staff_requirement} wide />
+          <PlanField label="Responsibilities" value={card.responsibilities} wide />
+          <PlanField label="Inventory requirement" value={card.inventory_requirement} wide />
+          <PlanField label="Invoice amount" value={card.invoice_amount} />
+        </div>
+
+        <div className="border-t border-line-2 px-4 py-3">
+          <p className="m-0 text-[13px] leading-relaxed text-ink">{card.approval_question}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {card.actions.map((a) => (
+              <CardBtn key={a.label} variant={a.variant ?? "ghost"} onClick={() => onAction?.(a.say)}>
+                {a.label}
+              </CardBtn>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (card.kind === "matches") {
     return (
       <div className="w-full max-w-[520px] rounded-[14px] border border-line bg-white p-3.5 shadow-[0_1px_0_rgba(22,20,16,0.02),0_8px_22px_-18px_rgba(22,20,16,0.16)]">
@@ -819,7 +799,7 @@ function Card({ card }: { card: AgentCard }) {
         </div>
         <div className="mt-2.5 flex flex-wrap gap-2">
           {card.actions.map((a) => (
-            <CardBtn key={a.label} variant={a.variant ?? "primary"}>{a.label}</CardBtn>
+            <CardBtn key={a.label} variant={a.variant ?? "primary"} onClick={a.say ? () => onAction?.(a.say ?? "") : undefined}>{a.label}</CardBtn>
           ))}
         </div>
       </div>
@@ -916,16 +896,35 @@ function Card({ card }: { card: AgentCard }) {
       </div>
       <div className="mt-2.5 flex flex-wrap gap-2">
         {card.actions.map((a) => (
-          <CardBtn key={a.label} variant={a.variant ?? "ghost"}>{a.label}</CardBtn>
+          <CardBtn key={a.label} variant={a.variant ?? "ghost"} onClick={a.say ? () => onAction?.(a.say ?? "") : undefined}>{a.label}</CardBtn>
         ))}
       </div>
     </div>
   );
 }
 
-function CardBtn({ children, variant = "primary" }: { children: React.ReactNode; variant?: "primary" | "ghost" }) {
+function PlanField({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+  return (
+    <div className={wide ? "sm:col-span-2" : ""}>
+      <small className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-muted">{label}</small>
+      <span className="block rounded-[10px] border border-line-2 bg-bg px-3 py-2 leading-relaxed text-ink">{value}</span>
+    </div>
+  );
+}
+
+function CardBtn({
+  children,
+  variant = "primary",
+  onClick,
+}: {
+  children: React.ReactNode;
+  variant?: "primary" | "ghost";
+  onClick?: () => void;
+}) {
   return (
     <button
+      type="button"
+      onClick={onClick}
       className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition hover:-translate-y-px ${
         variant === "ghost"
           ? "border border-line bg-transparent text-ink-2 hover:border-ink hover:text-ink"
@@ -967,25 +966,37 @@ interface ComposerProps {
   handleFiles: (files: FileList | null) => void;
 }
 
-function Composer(p: ComposerProps) {
-  const canSend = !p.sending && (p.draft.trim().length > 0 || p.pending.length > 0);
+function Composer({
+  draft,
+  setDraft,
+  pending,
+  setPending,
+  send,
+  sending,
+  onKeyDown,
+  textareaRef,
+  fileInputRef,
+  imageInputRef,
+  handleFiles,
+}: ComposerProps) {
+  const canSend = !sending && (draft.trim().length > 0 || pending.length > 0);
   return (
     <div className="px-5 pb-6 pt-3 md:px-9" style={{ background: "linear-gradient(to top, var(--color-bg) 60%, transparent)" }}>
       <div className="mx-auto mb-2 flex max-w-[780px] items-center gap-2.5 font-mono text-[11.5px] uppercase tracking-wider text-muted">
         <span className="h-[5px] w-[5px] rounded-full bg-accent" />
-        Loop has permission to text, call, schedule, and hold payments · owner approves releases
+        Loop can plan, shortlist, text, call, buy supplies, invoice, and hold payments · owner approves actions
       </div>
 
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (canSend) p.send();
+          if (canSend) send();
         }}
         className="mx-auto max-w-[780px] rounded-[18px] border border-line bg-white px-3 pb-2 pt-2.5 shadow-[0_1px_0_rgba(22,20,16,0.02),0_18px_40px_-28px_rgba(22,20,16,0.25)] focus-within:border-[rgba(22,20,16,0.35)]"
       >
-        {p.pending.length > 0 && (
+        {pending.length > 0 && (
           <div className="mb-1.5 flex flex-wrap gap-2 border-b border-line-2 px-1.5 pb-2 pt-1.5">
-            {p.pending.map((a, i) => {
+            {pending.map((a, i) => {
               const ext = (a.name.split(".").pop() ?? a.mime_type.split("/").pop() ?? "FILE")
                 .slice(0, 3)
                 .toUpperCase();
@@ -995,7 +1006,7 @@ function Composer(p: ComposerProps) {
                   <span className="max-w-[180px] truncate">{a.name}</span>
                   <button
                     type="button"
-                    onClick={() => p.setPending((prev) => prev.filter((_, j) => j !== i))}
+                    onClick={() => setPending((prev) => prev.filter((_, j) => j !== i))}
                     className="cursor-pointer px-0.5 text-muted transition hover:text-urgent"
                     title="Remove"
                   >
@@ -1008,25 +1019,25 @@ function Composer(p: ComposerProps) {
         )}
 
         <textarea
-          ref={p.textareaRef}
-          value={p.draft}
-          onChange={(e) => p.setDraft(e.target.value)}
-          onKeyDown={p.onKeyDown}
+          ref={textareaRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={onKeyDown}
           rows={1}
-          placeholder='Tell Loop what to do — "need 2 servers Friday 7pm, $25/hr each, urgent"…'
+          placeholder='Tell Loop the event — "corporate dinner Saturday, 80 guests, 10 staff, supplies and invoice"…'
           className="block min-h-[28px] w-full resize-none border-0 bg-transparent px-1.5 py-2 text-[15px] leading-snug text-ink outline-none placeholder:text-muted"
           style={{ maxHeight: 160 }}
         />
 
         <div className="flex items-center gap-1 pt-1">
-          <CompBtn title="Attach image" onClick={() => p.imageInputRef.current?.click()}>
+          <CompBtn title="Attach image" onClick={() => imageInputRef.current?.click()}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <rect x="2" y="3" width="12" height="10" rx="1.6" stroke="currentColor" strokeWidth="1.4" />
               <circle cx="6" cy="6.5" r="1.2" stroke="currentColor" strokeWidth="1.4" />
               <path d="M2.5 11l3.5-3 3 2.5 2-1.5 2.5 2" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
             </svg>
           </CompBtn>
-          <CompBtn title="Attach file" onClick={() => p.fileInputRef.current?.click()}>
+          <CompBtn title="Attach file" onClick={() => fileInputRef.current?.click()}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path
                 d="M10.5 6.5l-4 4a1.8 1.8 0 1 0 2.5 2.5l4.5-4.5a3 3 0 1 0-4.2-4.3L4 9.5a4.5 4.5 0 1 0 6.4 6.3"
@@ -1085,23 +1096,23 @@ function Composer(p: ComposerProps) {
         </div>
 
         <input
-          ref={p.fileInputRef}
+          ref={fileInputRef}
           type="file"
           multiple
           className="hidden"
           onChange={(e) => {
-            p.handleFiles(e.target.files);
+            handleFiles(e.target.files);
             e.target.value = "";
           }}
         />
         <input
-          ref={p.imageInputRef}
+          ref={imageInputRef}
           type="file"
           accept="image/*,video/*"
           multiple
           className="hidden"
           onChange={(e) => {
-            p.handleFiles(e.target.files);
+            handleFiles(e.target.files);
             e.target.value = "";
           }}
         />
@@ -1151,20 +1162,21 @@ function ContextPanel() {
       <CtxSection title="Current job">
         <div className="flex flex-col gap-2 rounded-[12px] border border-line bg-white p-3.5">
           <div className="flex items-center justify-between">
-            <span className="font-display text-[24px] leading-none tracking-tight">Bartender</span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-urgent-soft px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wider text-urgent">
-              ● Urgent
+            <span className="font-display text-[24px] leading-none tracking-tight">Corporate dinner</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wider text-accent">
+              ● Plan
             </span>
           </div>
           <div className="grid grid-cols-2 gap-x-3.5 gap-y-2 text-[12.5px] text-ink-2">
-            <CtxField label="Time" value="Tonight · 6–10 PM" />
+            <CtxField label="Date" value="This Saturday" />
+            <CtxField label="Time" value="6–11 PM" />
             <CtxField label="Location" value="SoMa, SF" />
-            <CtxField label="Pay" value="$135 · 4hr" />
-            <CtxField label="Skills" value="Event bartender" />
+            <CtxField label="Invoice" value="$1,756" />
           </div>
           <div className="flex flex-wrap gap-2 border-t border-line-2 pt-2">
-            <Pill variant="green">Maya · confirmed</Pill>
-            <Pill>Kai · backup</Pill>
+            <Pill variant="green">10 crew</Pill>
+            <Pill>Supplies $86</Pill>
+            <Pill>Labor $1,450</Pill>
           </div>
         </div>
       </CtxSection>
@@ -1173,12 +1185,13 @@ function ContextPanel() {
         <div className="flex flex-col">
           {[
             { state: "done", label: "Request parsed", time: "5:42" },
-            { state: "done", label: "Maya texted", time: "5:43" },
-            { state: "done", label: "Call placed", time: "5:44" },
-            { state: "done", label: "Confirmed · $135", time: "5:45" },
-            { state: "live", label: "Awaiting check-in", time: "5:55" },
-            { state: "pending", label: "Proof of work", time: "—" },
-            { state: "pending", label: "Release $135", time: "—" },
+            { state: "done", label: "Plan inferred", time: "5:42" },
+            { state: "live", label: "Awaiting owner approval", time: "now" },
+            { state: "pending", label: "Shortlist crew", time: "—" },
+            { state: "pending", label: "Text/call contractors", time: "—" },
+            { state: "pending", label: "Prepare supplies", time: "—" },
+            { state: "pending", label: "Draft invoice", time: "—" },
+            { state: "pending", label: "Create payment holds", time: "—" },
           ].map((row, i, arr) => (
             <div key={row.label} className="relative grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2.5 py-1.5 text-[12.5px]">
               {i < arr.length - 1 && <span className="absolute left-[8px] top-[18px] bottom-[-7px] w-[1.5px] bg-line" />}
@@ -1194,18 +1207,19 @@ function ContextPanel() {
 
       <CtxSection title="Tools Loop is using">
         <div className="flex flex-col gap-1.5">
-          <ToolRow label="AgentPhone · SMS & calls" detail="14 calls" />
-          <ToolRow label="AgentMail · owner summaries" detail="3 sent" />
-          <ToolRow label="Sponge · payment holds" detail="$135" />
+          <ToolRow label="Browser Use · supplies" detail="ready" />
+          <ToolRow label="AgentPhone · SMS & calls" detail="pending" />
+          <ToolRow label="AgentMail · invoice email" detail="draft" />
+          <ToolRow label="Sponge · payment holds" detail="pending" />
           <ToolRow label="Moss · roster memory" detail="42 records" />
         </div>
       </CtxSection>
 
       <CtxSection title="Files in this thread" last>
         <div className="flex flex-col gap-1.5">
-          <ToolRow label="Bay-Events-Brief.pdf" detail="1.2 MB" badge="PDF" />
-          <ToolRow label="bar-setup.jpg" detail="320 KB" badge="JPG" />
-          <ToolRow label="voice-0518.m4a" detail="0:18" badge="MP3" />
+          <ToolRow label="event-request.txt" detail="parsed" badge="TXT" />
+          <ToolRow label="supplies-plan.json" detail="draft" badge="JS" />
+          <ToolRow label="client-invoice.pdf" detail="preview" badge="PDF" />
         </div>
       </CtxSection>
     </aside>
@@ -1306,4 +1320,3 @@ function PaymentIcon() {
     </svg>
   );
 }
-

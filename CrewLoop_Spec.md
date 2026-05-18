@@ -2,17 +2,36 @@
 
 ## 1. Product Summary
 
-**Product name:** CrewLoop  
-**One-line pitch:** CrewLoop is an AI dispatcher for contractor-heavy small businesses. It reads work from the web tools businesses already use, finds the right contractor, texts or calls them based on urgency, schedules the job, verifies they showed up, and releases payment only when the work is completed.
+**Product name:** CrewLoop
+**One-line pitch:** CrewLoop turns a messy event request into a staffed, stocked, invoiced, and payment-ready job.
+
+**Short pitch:** Tell CrewLoop about an event, and it finds the right crew, confirms availability, buys required supplies, invoices the client, and holds worker pay until the job is completed.
+
+**Product framing:** CrewLoop is an AI ops dispatcher for event businesses. The demo should feel like one unified workflow: **fulfill this event**. Staffing, supplies, invoicing, and worker pay are not separate products; they are steps in the same event fulfillment loop.
 
 ## 2. Exact Problem
 
-Small businesses often rely on informal contractor lists. When a worker cancels or a last-minute job appears, the owner manually checks who is qualified, texts multiple people, calls urgent candidates, tracks replies, updates the schedule, verifies attendance, and pays after completion.
+Event businesses run on messy operational threads: client texts, contractor rosters, vendor websites, supply runs, invoices, and conditional worker pay. When a client requests an event, the owner has to turn that request into a real operation.
 
-This is especially painful for businesses that use contract labor:
+Today the owner manually:
 
-- event staffing companies
+- asks follow-up questions about the event
+- infers how many workers and roles are needed
+- checks contractor availability and reliability
+- texts or calls workers
+- fills gaps with backups
+- creates a schedule
+- buys supplies
+- prepares and sends an invoice
+- holds or tracks worker pay
+- collects proof of work
+- releases payment after completion
+
+This is especially painful for businesses that run events or field work:
+
 - catering companies
+- event staffing companies
+- venue operators
 - cleaning companies
 - moving companies
 - home-service companies
@@ -23,55 +42,88 @@ This is especially painful for businesses that use contract labor:
 
 The core problem is:
 
-> Small businesses need a fast, reliable way to fill urgent contractor jobs, verify proof of work, and pay only when the job is actually completed.
+> Event businesses need a fast, reliable way to turn a client request into a fully staffed, stocked, invoiced, and payment-ready job with proof and an audit trail.
 
 ## 3. Exact Idea
 
-CrewLoop turns a messy staffing emergency into a fully automated dispatch workflow. It can start from an owner text, or it can read an event page, schedule portal, spreadsheet, calendar, or staffing board through Browser Use and convert that web context into a dispatchable job.
+CrewLoop turns a messy event request into a guided fulfillment workflow. It starts in chat, asks only the minimum clarifying questions, uses Browser Use when source evidence is needed, and then coordinates the operational steps.
 
 Example owner text:
 
-> Need a bartender tonight from 6-10 PM in SoMa. Must have event experience. Pay $120. Urgent.
+> Hey, we got an event this Saturday that needs 10 people. Can you help me staff it, get supplies, and prepare the invoice?
 
 CrewLoop then:
 
-1. Parses the job request or imports it from a web source.
-2. Captures source evidence from the original page.
-3. Searches the contractor roster.
-4. Matches by skill, availability, location, reliability, and rate.
-5. Texts the best contractor.
-6. Calls if the request is urgent or no one replies.
-7. Confirms the contractor.
-8. Creates the schedule.
-9. Emails the owner a summary.
-10. Collects proof that the contractor showed up.
-11. Holds payment until work is complete.
-12. Releases payment after proof and approval.
+1. Asks 3 structured questions: event type, timing, and whether to infer roles.
+2. Infers the staffing plan and responsibilities.
+3. Creates a recommended crew plan.
+4. Shortlists contractors from the roster using Moss memory.
+5. Asks owner approval before contacting workers.
+6. Texts most contractors and calls only urgent or key roles.
+7. Fills open roles with backups.
+8. Creates the event schedule and sends contractor confirmations.
+9. Infers a short supply list and asks owner approval before purchase.
+10. Uses Browser Use to check or simulate vendor checkout.
+11. Prepares and sends the client invoice.
+12. Creates conditional worker pay holds.
+13. Collects proof of check-in and completion.
+14. Releases worker pay after proof and owner approval.
 
 ## 4. Hackathon Demo Scenario
 
 ### Demo business
 
-**Bay Events Co.** needs a replacement contractor.
+**Bay Events Co.** needs to fulfill a corporate dinner.
 
 ### Demo request
 
-> Our bartender canceled. Need a replacement tonight from 6-10 PM in SoMa. Must have event experience. Pay $120. This is urgent.
+> We have a corporate dinner this Saturday for 80 guests in SoMa from 6-11 PM. Can you staff it, get supplies, and prepare the invoice?
 
 ### Demo outcome
 
-CrewLoop finds Emma, a qualified bartender nearby, texts her, calls her when urgent, confirms the shift, sends the owner an email, verifies Emma checked in, and releases payment after proof of work.
+CrewLoop infers a 10-person crew, ranks candidates, asks the owner to approve the shortlist, texts the crew, calls one urgent/key role live, fills gaps with backups, creates the schedule, recommends a small supply purchase, prepares the client invoice, creates conditional worker pay holds, and shows proof-based release.
+
+### Demo constraint
+
+The live demo should not try to show every operational detail. It should focus on three big moments:
+
+1. Smart crew matching.
+2. Real contractor outreach: SMS plus one live phone call.
+3. Conditional worker payment: held until proof of work.
+
+Inventory and invoice should appear as quick, natural steps in the same timeline, not as separate product demos.
+
+### Demo realism split
+
+**Must be real in the demo:**
+
+- Chat flow.
+- Candidate shortlisting.
+- SMS to contractors.
+- One outbound phone call.
+- Schedule creation.
+- Invoice preview/email.
+- Payment hold/release UI.
+
+**Can be demo-controlled:**
+
+- Contractor roster.
+- Contractor replies.
+- Inventory store.
+- Client invoice recipient.
+- Payment sandbox.
+- Check-in proof.
 
 ## 5. Sponsor Usage
 
 | Sponsor | Exact Use in CrewLoop |
 |---|---|
-| **AgentPhone** | Handles SMS and phone calls. Owner texts the job request. CrewLoop texts contractors. If urgent or no response, CrewLoop calls the contractor. Contractors can check in by SMS or phone. |
-| **AgentMail** | Sends owner summaries, contractor confirmations, final job reports, timesheets, and receipts. Can also receive proof documents or job details by email. |
-| **Browser Use** | Native web workspace layer. CrewLoop uses Browser Use to read event pages, staffing portals, calendars, web forms, and spreadsheets; extract job details; update external schedule tools; verify venue/event details; and capture browser screenshots as audit evidence. |
-| **Stripe / MPP** | Creates the payment flow for contractor pay. Used for payment authorization, payment links, payout simulation, receipt generation, and payment status. |
-| **Sponge** | Provides the agent wallet and payment rules: pay cap, proof required, approval required, contractor identity match, and release conditions. This is the core sponsor for conditional payment. |
-| **Moss** | Stores and retrieves contractor memory: skills, reliability, preferred jobs, response speed, past work, rates, locations, certifications, and no-show history. |
+| **AgentPhone** | Text and call contractors, receive accept/decline/question/check-in messages, and call urgent or key roles live during the demo. |
+| **AgentMail** | Email client invoice, owner summary, contractor confirmations, final job report, receipt, and vendor/invoice messages when needed. |
+| **Browser Use** | Read event or staffing pages, check vendor availability, simulate or perform supply checkout, capture screenshots/source evidence, and update external source status. |
+| **Stripe / MPP** | Create client invoice/payment link and represent worker payment/payment status in sandbox. |
+| **Sponge** | Hold worker pay with release rules: accepted assignment, check-in, shift complete, proof submitted, and owner approval. |
+| **Moss** | Remember contractor skills, reliability, rates, past event history, client preferences, response speed, and no-show risk. |
 
 ### 5.1 Integration Configuration
 
@@ -90,43 +142,100 @@ Keep real credentials in local environment files only. The repo should document 
 
 ### 6.1 Intake Agent
 
-**Purpose:** Understands the job request from the owner.
+**Purpose:** Understands the event request from the owner.
 
 **Inputs:**
 
 - SMS from owner
 - phone call transcript
 - email request
-- browser-imported job description
+- browser-imported event or job description
+- client event details
 
 **Outputs:**
 
-- structured job object
+- structured event/job object
 - urgency score
 - missing information questions
+- fulfillment intent: staff, stock, invoice, payment setup
 
 **Features:**
 
-- Extract role, time, location, pay, urgency, required skills.
+- Extract event type, guest count, time, location, budget, urgency, and requested outcomes.
 - Ask one clarifying question only if needed.
-- Detect urgency from phrases like "tonight," "ASAP," "canceled," or "in 1 hour."
+- Use structured buttons for demo-speed clarification:
+  - event type
+  - timing
+  - infer roles vs owner-specified roles
+  - approval before outreach
+- Detect urgency from phrases like "tonight," "ASAP," "canceled," "this weekend," or "in 1 hour."
 
 ---
 
-### 6.2 Contractor Matching Agent
+### 6.2 Event Planning Agent
 
-**Purpose:** Finds the best contractor for the job.
+**Purpose:** Converts an event request into an operational plan.
 
 **Inputs:**
 
-- structured job object
+- structured event object
+- event type
+- guest count
+- time window
+- owner preferences
+- known venue/client history
+
+**Outputs:**
+
+- recommended crew plan
+- inferred responsibilities
+- estimated labor cost
+- urgency rating
+- approval prompt
+
+**Features:**
+
+- Infer crew needs from event type and guest count.
+- Keep demo roles simple and explainable.
+- Ask owner approval before contractor outreach.
+- Produce a clear plan:
+
+```text
+Event: Corporate dinner
+Guests: 80
+Time: 6 PM-11 PM
+Location: SoMa
+
+Recommended crew:
+- 2 bartenders
+- 4 servers
+- 2 setup crew
+- 1 event lead
+- 1 cleanup lead
+
+Total: 10 people
+Estimated labor cost: $1,450
+Urgency: medium
+```
+
+---
+
+### 6.3 Contractor Matching Agent
+
+**Purpose:** Finds the best crew for the event.
+
+**Inputs:**
+
+- structured event/job object
+- required role plan
 - contractor roster
 - Moss memory
 
 **Outputs:**
 
-- ranked contractor list
+- ranked contractor list by role
 - matching explanation
+- backup list
 
 **Features:**
 
@@ -136,27 +245,34 @@ Keep real credentials in local environment files only. The repo should document 
 - Consider reliability score.
 - Consider response speed.
 - Consider preferred rate.
+- Consider similar event history.
+- Consider client preference.
+- Consider no-show risk.
 - Identify backup contractors.
 
 **Example ranking:**
 
 ```text
-Emma - bartender - 98% reliability - 2 miles away - recommended
-Madison - bartender - 61% reliability - backup
-Luis - server - skill mismatch
+Bartenders:
+1. Emma - bartender - 98% reliability - 2 miles away - recommended
+2. Madison - bartender - 84% reliability - backup
+
+Servers:
+1. Luis - server - 95% reliability - $25/hr
+2. Ashley - server - 91% reliability - $26/hr
 ```
 
 ---
 
-### 6.3 Outreach Agent
+### 6.4 Outreach Agent
 
 **Purpose:** Contacts contractors through the right channel.
 
 **Inputs:**
 
-- ranked contractor list
+- approved crew shortlist
 - urgency score
-- job details
+- event/job details
 
 **Outputs:**
 
@@ -166,41 +282,112 @@ Luis - server - skill mismatch
 
 **Features:**
 
-- Texts top contractor first.
-- If urgent, calls immediately.
+- Texts approved contractors.
+- Calls only urgent or key roles live during the demo.
 - If no reply after a configured timeout, escalates to next contractor.
 - Handles contractor replies like "yes," "can't," "what's the pay," or "where?"
 - Logs every interaction to the dispatch timeline.
+- Demo pattern:
+
+```text
+Texted 10 contractors
+7 accepted by SMS
+1 declined
+1 no response
+Calling backup bartender now
+Backup accepted
+Crew complete: 10/10
+```
 
 ---
 
-### 6.4 Scheduling Agent
+### 6.5 Scheduling Agent
 
-**Purpose:** Converts contractor acceptance into a confirmed shift.
+**Purpose:** Converts accepted workers into a confirmed event schedule.
 
 **Inputs:**
 
-- contractor acceptance
-- job object
+- contractor acceptances
+- event/job object
 - owner preferences
 
 **Outputs:**
 
-- confirmed schedule entry
-- contractor confirmation message
+- confirmed schedule entries
+- role-specific contractor confirmation messages
 - owner email summary
 
 **Features:**
 
-- Locks the job once a contractor accepts.
-- Sends job details to contractor.
+- Locks each role once a contractor accepts.
+- Sends assignment details to each contractor.
 - Sends owner summary email.
 - Adds backup contractor if needed.
 - Creates a check-in reminder.
+- Creates an event schedule:
+
+```text
+5:00 PM - Setup crew arrives
+5:30 PM - Event lead arrives
+6:00 PM - Servers arrive
+6:30 PM - Bartenders arrive
+10:30 PM - Cleanup starts
+11:30 PM - Shift complete
+```
 
 ---
 
-### 6.5 Proof-of-Work Agent
+### 6.6 Procurement and Invoice Agent
+
+**Purpose:** Handles the small non-staffing operations required to fulfill the event.
+
+**Inputs:**
+
+- event type
+- guest count
+- inferred supply needs
+- current inventory or vendor source
+- client billing details
+- owner approval
+
+**Outputs:**
+
+- small supply list
+- browser/vendor evidence
+- purchase approval request
+- invoice preview
+- sent invoice email
+
+**Features:**
+
+- Keep supply inference short for demo:
+
+```text
+- 100 compostable cups
+- 100 napkins
+- 4 bags of ice
+- 2 tablecloths
+- bartender tool kit rental
+```
+
+- Ask owner approval before purchase.
+- Use Browser Use to check vendor availability or simulate checkout.
+- Prepare client invoice:
+
+```text
+Labor: $1,450
+Supplies: $86
+Service fee: $220
+Total invoice: $1,756
+Deposit requested: $500
+Balance due after event: $1,256
+```
+
+- Send invoice through AgentMail after approval.
+
+---
+
+### 6.7 Proof-of-Work Agent
 
 **Purpose:** Verifies that the contractor showed up and completed the job.
 
@@ -229,13 +416,13 @@ Luis - server - skill mismatch
 
 ---
 
-### 6.6 Payment Agent
+### 6.8 Payment Agent
 
-**Purpose:** Holds and releases contractor pay based on rules.
+**Purpose:** Holds and releases worker pay based on rules.
 
 **Inputs:**
 
-- job pay amount
+- event/job pay amounts
 - contractor identity
 - proof status
 - owner approval
@@ -259,16 +446,18 @@ Luis - server - skill mismatch
 **Release rule example:**
 
 ```text
-Release $120 only if:
-- contractor accepted the shift
+Maya - $175 - held
+Release only if:
+- contractor accepted assignment
 - contractor checked in
+- shift completed
 - proof was submitted
-- owner approved completion
+- manager/owner approved completion
 ```
 
 ---
 
-### 6.7 Reporting Agent
+### 6.9 Reporting Agent
 
 **Purpose:** Keeps the owner updated.
 
@@ -276,7 +465,9 @@ Release $120 only if:
 
 - timeline events
 - schedule status
-- contractor status
+- crew fill status
+- invoice status
+- supply purchase status
 - payment status
 
 **Outputs:**
@@ -287,14 +478,15 @@ Release $120 only if:
 
 **Features:**
 
-- Sends "contractor found" summary.
+- Sends "crew confirmed" summary.
+- Sends invoice and supply summary.
 - Sends check-in confirmation.
-- Sends final job report.
+- Sends final event report.
 - Includes proof, payment receipt, and timeline.
 
 ---
 
-### 6.8 Escalation Agent
+### 6.10 Escalation Agent
 
 **Purpose:** Handles failures and backup plans.
 
@@ -304,6 +496,8 @@ Release $120 only if:
 - contractor rejection
 - late check-in
 - failed proof
+- vendor unavailable
+- invoice edit needed
 - owner override
 
 **Outputs:**
@@ -317,13 +511,14 @@ Release $120 only if:
 - If top contractor does not reply, moves to backup.
 - If accepted contractor does not check in, calls them.
 - If contractor misses check-in, alerts owner and starts replacement search.
+- If vendor stock is unavailable, suggests a simpler substitute.
 - If payment proof fails, blocks release.
 
 ---
 
-### 6.9 Memory Agent
+### 6.11 Memory Agent
 
-**Purpose:** Learns from contractor history.
+**Purpose:** Learns from contractor, vendor, and client history.
 
 **Inputs:**
 
@@ -333,6 +528,8 @@ Release $120 only if:
 - no-shows
 - skill tags
 - owner notes
+- vendor outcomes
+- client preferences
 
 **Outputs:**
 
@@ -346,17 +543,19 @@ Release $120 only if:
 - Tracks reliability.
 - Remembers who accepts urgent jobs.
 - Remembers who no-showed.
+- Remembers preferred vendors and client-specific staffing patterns.
 - Improves ranking over time.
 
 ---
 
-### 6.10 Browser Integration Agent
+### 6.12 Browser Integration Agent
 
 **Purpose:** Makes web tools feel native inside CrewLoop.
 
 **Inputs:**
 
 - event website
+- vendor website
 - schedule tool
 - calendar
 - staffing portal
@@ -366,6 +565,8 @@ Release $120 only if:
 **Outputs:**
 
 - imported job details
+- supply availability
+- checkout or vendor evidence
 - updated schedule
 - proof screenshots
 - source evidence
@@ -375,6 +576,8 @@ Release $120 only if:
 
 - Reads job details from a web page.
 - Pulls staffing needs from a spreadsheet or portal.
+- Checks inventory/vendor availability.
+- Simulates or performs approved supply checkout.
 - Updates external schedule.
 - Captures screenshots for proof.
 - Shows the original web source inside the Dispatch Room.
@@ -385,91 +588,123 @@ Release $120 only if:
 **Native browser workflow:**
 
 ```text
-Open source page -> extract shift details -> show source evidence -> owner confirms -> create Job -> dispatch contractor -> update source page -> save screenshot to audit trail
+Open source page -> extract event details -> show source evidence -> owner approves -> create plan -> dispatch crew -> check supplies -> send invoice -> save screenshots to audit trail
 ```
 
 ## 7. MVP Features
 
 ### Must-have for hackathon demo
 
-1. Owner can text a staffing request or import a shift from a web page.
-2. Browser Use captures the source page, extracts job details, and adds source evidence.
-3. System creates a Dispatch Room.
-4. Contractor list is ranked.
-5. Agent texts the top contractor.
-6. Agent calls contractor if urgent.
-7. Contractor accepts by SMS or call.
-8. Schedule is created.
-9. External source can be updated or marked as filled.
-10. Owner receives email summary.
-11. Payment hold is created.
-12. Contractor checks in with proof.
-13. Owner approves payment release.
-14. Receipt/final report is emailed.
+1. Owner can start from chat with an event request.
+2. Agent asks 3 structured questions with buttons.
+3. Agent infers a 10-person staffing plan.
+4. System creates a Dispatch/Event Fulfillment Room.
+5. Browser Use captures event/source evidence.
+6. Contractor shortlist is ranked by role.
+7. Owner approves shortlist before outreach.
+8. Agent texts contractors.
+9. Agent calls one urgent/key role live.
+10. Demo-controlled contractor replies fill the crew.
+11. Schedule is created.
+12. Agent recommends 3-5 supply items and asks approval.
+13. Browser Use checks or simulates supply checkout.
+14. Client invoice preview is generated and emailed.
+15. Worker payment holds are created.
+16. Contractor checks in with proof.
+17. Owner approves payment release.
+18. Receipt/final report is emailed.
 
 ### Nice-to-have
 
-1. Backup contractor escalation.
+1. Backup contractor escalation for each role.
 2. QR check-in.
 3. Photo proof.
 4. Reliability score updates after demo.
-5. Multiple contractors for one job.
-6. Contractor-facing mini page.
-7. Saved templates for common web portals.
+5. Contractor-facing mini page.
+6. Saved templates for common web portals.
+7. Real vendor checkout after explicit owner approval.
+8. Invoice markup editing.
+9. Client deposit payment link.
 
 ## 8. Dispatch Room UI
 
 ### Page: `/dispatch/:job_id`
 
+For demo, this can still be called Dispatch Room, but the story should be **Event Fulfillment Room**: one place where staffing, supplies, invoice, payment holds, proof, and source evidence are visible.
+
 Sections:
 
-1. **Job Request Card**
-   - Role
+1. **Event Request Card**
+   - Event type
+   - Guest count
    - Time
    - Location
-   - Pay
+   - Budget / labor estimate
    - Urgency
-   - Required skills
+   - Required outcomes: staff, supplies, invoice, pay
 
-2. **Contractor Match List**
+2. **Crew Plan + Contractor Match List**
+   - Role groups
    - Name
    - Skills
    - Distance
    - Reliability
    - Availability
+   - Rate
+   - Capabilities
    - Status
 
 3. **Live Timeline**
-   - Request parsed
-   - Contractor matched
-   - Text sent
-   - Call placed
-   - Contractor accepted
+   - Event request parsed
+   - Source evidence captured
+   - Crew plan inferred
+   - Shortlist approved
+   - Texts sent
+   - Call placed for key role
+   - Crew accepted
    - Schedule created
-   - Payment held
+   - Supplies approved
+   - Invoice prepared/sent
+   - Worker pay held
    - Proof received
-   - Payment released
+   - Worker pay released
 
-4. **Payment Panel**
+4. **Supply Panel**
+   - Recommended items
+   - Estimated cost
+   - Vendor/source
+   - Browser evidence
+   - Approval status
+
+5. **Invoice Panel**
+   - Labor line item
+   - Supplies line item
+   - Service fee
+   - Total invoice
+   - Deposit request
+   - Email status
+
+6. **Worker Payment Panel**
    - Amount
    - Status: pending / held / blocked / released
    - Release conditions
    - Approval button
 
-5. **Proof Panel**
+7. **Proof Panel**
    - SMS check-in
    - photo proof
    - manager confirmation
    - timesheet
 
-6. **Owner Summary**
-   - confirmed contractor
-   - ETA
-   - pay
+8. **Owner Summary**
+   - crew filled count
+   - schedule status
+   - supply status
+   - invoice status
    - proof
    - payment status
 
-7. **Web Source Panel**
+9. **Web Source Panel**
    - source URL
    - imported fields
    - browser screenshot
@@ -484,15 +719,26 @@ Job
 - id
 - owner_id
 - business_name
-- role
+- event_type
 - description
+- guest_count
 - location
 - start_time
 - end_time
-- pay_amount
+- estimated_labor_cost
+- estimated_supply_cost
 - urgency
-- required_skills
+- required_outcomes
 - status
+
+EventPlan
+- id
+- job_id
+- roles: bartender/server/setup/event_lead/cleanup
+- required_count_by_role
+- responsibilities
+- estimated_labor_cost
+- approval_status
 
 Contractor
 - id
@@ -521,9 +767,32 @@ Schedule
 - id
 - job_id
 - contractor_id
+- role
 - start_time
 - end_time
 - status
+
+SupplyOrder
+- id
+- job_id
+- items
+- vendor
+- estimated_cost
+- approval_status
+- browser_source_id
+- checkout_status
+
+ClientInvoice
+- id
+- job_id
+- client_email
+- labor_amount
+- supplies_amount
+- service_fee
+- deposit_amount
+- total_amount
+- status: draft | sent | paid | void
+- provider_state
 
 Proof
 - id
@@ -538,6 +807,7 @@ Payment
 - id
 - job_id
 - contractor_id
+- schedule_id
 - amount
 - status: pending | held | blocked | released
 - release_conditions
@@ -568,9 +838,16 @@ Event
 ```text
 POST /jobs
 GET /jobs/{job_id}
+POST /jobs/{job_id}/infer-event-plan
 POST /jobs/{job_id}/rank-contractors
 POST /jobs/{job_id}/outreach
 POST /jobs/{job_id}/accept
+POST /jobs/{job_id}/schedule
+POST /jobs/{job_id}/recommend-supplies
+POST /jobs/{job_id}/approve-supplies
+POST /jobs/{job_id}/invoice
+POST /jobs/{job_id}/send-invoice
+POST /jobs/{job_id}/payment-holds
 POST /jobs/{job_id}/check-in
 POST /jobs/{job_id}/approve-release
 POST /jobs/{job_id}/events
@@ -588,26 +865,31 @@ POST /webhooks/sponge
 
 Opening:
 
-> Small businesses run on contractor lists, but when someone cancels last minute, the owner still has to manually text, call, schedule, verify, and pay. CrewLoop automates that entire dispatch loop.
+> Event businesses run through texts, tabs, vendor sites, invoices, calls, and payment approvals. CrewLoop turns one messy event request into a fulfilled event: staffed, stocked, invoiced, and payment-ready.
 
 Live demo:
 
-1. CrewLoop opens a Bay Events Co. staffing page showing a canceled bartender shift.
-2. Browser Use extracts: bartender, tonight, 6-10 PM, SoMa, $120, event experience, urgent.
-3. Dispatch Room appears with source evidence from the page.
-4. CrewLoop ranks contractors.
-5. CrewLoop texts Emma.
-6. Because the job is urgent, CrewLoop calls Emma.
-7. Emma accepts.
-8. CrewLoop schedules Emma, marks the web source as filled, and emails the owner.
-9. CrewLoop creates a $120 payment hold.
-10. Emma checks in with proof.
-11. Owner approves release.
-12. Payment is released and receipt is emailed.
+1. Owner starts in chat: "We have a corporate dinner this Saturday for 80 guests. Can you staff it, get supplies, and prepare the invoice?"
+2. CrewLoop asks 3 structured questions: event type, timing, and whether to infer roles.
+3. CrewLoop infers the crew plan: 2 bartenders, 4 servers, 2 setup crew, 1 event lead, 1 cleanup lead.
+4. CrewLoop shows estimated labor cost and asks for shortlist approval.
+5. CrewLoop ranks contractors by role using reliability, skill, availability, distance, rate, and Moss memory.
+6. Owner clicks "Approve and contact."
+7. CrewLoop texts the crew and calls one key role live.
+8. Dashboard shows demo-controlled replies: 7 accepted, 1 declined, 1 no response, backup accepted, crew complete 10/10.
+9. CrewLoop creates the event schedule and sends contractor confirmations.
+10. CrewLoop recommends 3-5 supply items and asks approval for an $86 purchase.
+11. Browser Use checks vendor availability or simulates checkout and saves screenshot evidence.
+12. CrewLoop prepares the client invoice: labor, supplies, service fee, deposit, balance.
+13. CrewLoop sends the invoice through AgentMail.
+14. CrewLoop creates conditional worker pay holds.
+15. Contractor check-in/proof arrives.
+16. Owner approves release.
+17. Worker pay is released and final report/receipt is emailed.
 
 Closing:
 
-> CrewLoop is not just an assistant. It is an AI dispatcher that fills urgent jobs, verifies work, and pays contractors only when the job is done.
+> CrewLoop is not a staffing app, an inventory app, or an invoice app. It is the ops dispatcher that fulfills the event and keeps every action accountable.
 
 ## 12. Build Plan
 
@@ -615,36 +897,45 @@ Closing:
 
 - Create Bay Events Co. fake business.
 - Create contractor roster: Emma, Madison, Luis, Ashley.
-- Create one urgent bartender job.
+- Create one corporate dinner event request.
+- Create demo crew plan for 10 workers.
+- Create demo supply list and invoice values.
 - Write contractor call/SMS scripts.
 
 ### Hour 1-3: Frontend
 
-- Build Dispatch Room.
+- Build chat-first event intake.
+- Build Dispatch/Event Fulfillment Room.
 - Add fake timeline events.
-- Add contractor ranking UI.
+- Add crew plan and contractor ranking UI.
+- Add supply and invoice preview panels.
 - Add payment/proof panels.
 - Add Web Source Panel with imported fields and screenshot evidence.
 
 ### Hour 3-5: Integrations
 
-- Browser Use import from fake Bay Events Co. staffing page.
+- Browser Use import from fake Bay Events Co. event/source page.
+- Browser Use supply availability / checkout simulation.
 - AgentPhone inbound owner SMS.
-- AgentPhone outbound contractor SMS/call.
-- AgentMail owner summary email.
-- Stripe/Sponge payment hold/release simulation.
+- AgentPhone outbound contractor SMS plus one live call.
+- AgentMail client invoice, owner summary, and contractor confirmations.
+- Stripe/Sponge client invoice/payment state and worker pay hold/release simulation.
 
 ### Hour 5-6: Orchestration
 
-- Connect job request to matching.
+- Connect event request to crew plan.
+- Connect crew plan to matching.
 - Connect outreach events to timeline.
-- Connect contractor response to schedule.
+- Connect contractor responses to schedule.
+- Connect supply approval to Browser Use evidence.
+- Connect invoice preview to AgentMail.
 - Connect proof to payment release.
 
 ### Hour 6-7: Proof and payment polish
 
 - Add check-in proof flow.
 - Add release approval button.
+- Add worker payment holds per role.
 - Add final report email.
 
 ### Hour 7-8: Rehearsal
@@ -656,37 +947,45 @@ Closing:
 ## 13. Future Features
 
 1. Contractor reliability learning.
-2. Multi-worker staffing jobs.
-3. Contractor availability calendar.
-4. Automatic backup dispatch.
-5. Payroll/payout integrations.
-6. Timesheets and invoices.
-7. Certifications and document verification.
-8. Job templates by industry.
-9. Owner policy controls.
-10. Contractor mobile portal.
-11. Multi-location business support.
-12. Integration with scheduling tools.
-13. Dispute resolution workflow.
-14. Recurring jobs.
-15. Marketplace for trusted contractors.
+2. Contractor availability calendar.
+3. Automatic backup dispatch.
+4. Real vendor checkout after explicit owner approval.
+5. Inventory memory and reorder thresholds.
+6. Client invoice payment links and deposit tracking.
+7. Payroll/payout integrations.
+8. Timesheets and certifications.
+9. Job templates by event type.
+10. Owner policy controls.
+11. Contractor mobile portal.
+12. Multi-location business support.
+13. Integration with scheduling tools.
+14. Dispute resolution workflow.
+15. Recurring events.
+16. Marketplace for trusted contractors and vendors.
 
 ## 14. Success Criteria for Hackathon
 
 The demo should prove:
 
-1. The agent can understand a real staffing request.
-2. The agent can choose the right contractor.
-3. The agent can communicate through SMS/call/email.
-4. The agent can create a schedule.
-5. The agent can verify proof of work.
-6. The agent can safely release payment after approval.
-7. The owner gets a complete audit trail.
+1. The agent can understand a real event request.
+2. The agent can infer a staffing and supply plan.
+3. The agent can choose the right crew from memory.
+4. The owner approves before high-impact actions.
+5. The agent can communicate through SMS/call/email.
+6. The agent can create a schedule.
+7. The agent can prepare invoice and supply steps without branching into separate products.
+8. The agent can verify proof of work.
+9. The agent can safely release worker pay after approval.
+10. The owner gets a complete audit trail.
 
 ## 15. Final Product Framing
 
-CrewLoop is the AI dispatcher and payment-control layer for contractor-heavy small businesses.
+CrewLoop is the AI ops dispatcher for event businesses.
 
 Final pitch:
 
-> When a contractor cancels, CrewLoop finds the right replacement, contacts them, schedules the job, verifies they showed up, and releases payment only when the work is done.
+> CrewLoop turns a messy event request into a fully staffed, stocked, invoiced, and payment-ready job.
+
+Demo thesis:
+
+> Fulfill this event.
