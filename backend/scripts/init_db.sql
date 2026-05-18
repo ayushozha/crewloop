@@ -116,6 +116,18 @@ CREATE TABLE IF NOT EXISTS event_supplies (
 CREATE INDEX IF NOT EXISTS event_supplies_event_idx ON event_supplies (event_id);
 CREATE INDEX IF NOT EXISTS event_supplies_status_idx ON event_supplies (status);
 
+-- Live-browse + payment columns (additive, safe to re-run).
+ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS bu_session_id   text;
+ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS bu_live_url     text;
+ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS bu_status       text;
+ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS bu_step_count   integer;
+ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS bu_cost_usd     numeric(10,4);
+ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS bu_output       jsonb;
+ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS payment_status  text;
+ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS payment_method  text;
+ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS payment_ref     text;
+ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS paid_at         timestamptz;
+
 CREATE TABLE IF NOT EXISTS jobs (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   business_name   text NOT NULL,

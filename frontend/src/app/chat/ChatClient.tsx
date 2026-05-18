@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/Brand";
-import { api, type ChatEventPlan } from "@/lib/api";
+import { api, type ChatBulkOutreach, type ChatEventPlan, type ChatInvoiceEmail } from "@/lib/api";
 
 /* ============================== types =============================== */
 
@@ -24,7 +24,7 @@ interface ChatMessage {
   attachments?: Attachment[];
   ts: string; // formatted time
   voice?: { duration: string };
-  suggestions?: string[];
+  suggestions?: Array<{ label: string; say: string }>;
   card?: AgentCard;
 }
 
@@ -33,6 +33,14 @@ type AgentCard =
       kind: "event_plan";
       actions: Array<{ label: string; say: string; variant?: "primary" | "ghost" }>;
     } & ChatEventPlan)
+  | ({
+      kind: "bulk_outreach";
+      actions: Array<{ label: string; say: string; variant?: "primary" | "ghost" }>;
+    } & ChatBulkOutreach)
+  | ({
+      kind: "invoice_email";
+      actions: Array<{ label: string; say: string; variant?: "primary" | "ghost" }>;
+    } & ChatInvoiceEmail)
   | {
       kind: "matches";
       title: string;
@@ -76,7 +84,6 @@ const SEED_MESSAGES: ChatMessage[] = [
   {
     id: "a-1",
     role: "agent",
-    text: "Here’s the concise event plan I inferred. If this looks right, approve it and I’ll move to crew shortlisting.",
     ts: "5:42 PM",
     card: {
       kind: "event_plan",
@@ -152,6 +159,22 @@ function cardFromEventPlan(plan: ChatEventPlan, actions: Array<{ label: string; 
   };
 }
 
+function cardFromBulkOutreach(snapshot: ChatBulkOutreach, actions: Array<{ label: string; say: string }> = []): AgentCard {
+  return {
+    kind: "bulk_outreach",
+    ...snapshot,
+    actions: actions.map((action, index) => ({ ...action, variant: index === 0 ? "primary" : "ghost" })),
+  };
+}
+
+function cardFromInvoiceEmail(snapshot: ChatInvoiceEmail, actions: Array<{ label: string; say: string }> = []): AgentCard {
+  return {
+    kind: "invoice_email",
+    ...snapshot,
+    actions: actions.map((action, index) => ({ ...action, variant: index === 0 ? "primary" : "ghost" })),
+  };
+}
+
 /* ============================== component =============================== */
 
 export function ChatClient() {
@@ -197,20 +220,20 @@ export function ChatClient() {
     return () => window.clearInterval(id);
   }, [inCall]);
 
-  const send = useCallback(async () => {
-    const text = draft.trim();
-    if (!text && pending.length === 0) return;
+  const submitMessage = useCallback(async (rawText: string, attachments: Attachment[] = []) => {
+    if (sending) return;
+    const text = rawText.trim();
+    if (!text && attachments.length === 0) return;
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
       role: "user",
       text,
       ts: nowStr(),
-      attachments: pending.length ? pending : undefined,
+      attachments: attachments.length ? attachments : undefined,
     };
     const optimistic = [...messages, userMsg];
     setMessages(optimistic);
-    const sentAttachments = pending;
     setDraft("");
     setPending([]);
     setSending(true);
@@ -222,16 +245,27 @@ export function ChatClient() {
           role: m.role === "user" ? ("user" as const) : ("model" as const),
           text: m.text ?? (m.attachments?.length ? `[${m.attachments.length} attachment${m.attachments.length === 1 ? "" : "s"}]` : ""),
         }));
-      const apiAttachments = sentAttachments
+      const apiAttachments = attachments
         .filter((a) => a.data) // real uploads only; demo seed images have empty data
         .map((a) => ({ mime_type: a.mime_type, data: a.data, name: a.name }));
       const response = await api.chat({ turns, attachments: apiAttachments });
       const card = response.event_plan
         ? cardFromEventPlan(response.event_plan, response.action_chips ?? [])
-        : undefined;
+        : response.bulk_outreach
+          ? cardFromBulkOutreach(response.bulk_outreach, response.action_chips ?? [])
+          : response.invoice_email
+            ? cardFromInvoiceEmail(response.invoice_email, response.action_chips ?? [])
+            : undefined;
       setMessages((prev) => [
         ...prev,
-        { id: `a-${Date.now()}`, role: "agent", text: response.reply, card, ts: nowStr() },
+        {
+          id: `a-${Date.now()}`,
+          role: "agent",
+          text: card ? undefined : response.reply,
+          card,
+          suggestions: card ? undefined : response.action_chips,
+          ts: nowStr(),
+        },
       ]);
     } catch (e) {
       const detail = e instanceof Error ? e.message : "Loop is offline";
@@ -242,7 +276,15 @@ export function ChatClient() {
     } finally {
       setSending(false);
     }
-  }, [draft, pending, messages]);
+  }, [messages, sending]);
+
+  const send = useCallback(async () => {
+    await submitMessage(draft, pending);
+  }, [draft, pending, submitMessage]);
+
+  const sendCardAction = useCallback((text: string) => {
+    void submitMessage(text);
+  }, [submitMessage]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -286,6 +328,7 @@ export function ChatClient() {
         inCall={inCall}
         setInCall={setInCall}
         callTime={callTime}
+        onCardAction={sendCardAction}
       />
       <ContextPanel />
     </div>
@@ -420,6 +463,7 @@ interface ChatColumnProps {
   inCall: boolean;
   setInCall: (b: boolean) => void;
   callTime: string;
+  onCardAction: (s: string) => void;
 }
 
 function ChatColumn({
@@ -439,6 +483,7 @@ function ChatColumn({
   inCall,
   setInCall,
   callTime,
+  onCardAction,
 }: ChatColumnProps) {
   return (
     <section className="flex min-w-0 flex-col bg-bg">
@@ -448,7 +493,7 @@ function ChatColumn({
         <div className="mx-auto flex max-w-[780px] flex-col gap-[18px]">
           <Daybreak>Today · 5:42 PM PT</Daybreak>
           {messages.map((m) => (
-            <MessageBubble key={m.id} msg={m} onSuggestion={(s) => setDraft(s)} />
+            <MessageBubble key={m.id} msg={m} onSuggestion={(s) => setDraft(s)} onCardAction={onCardAction} />
           ))}
           {sending && <TypingIndicator />}
         </div>
@@ -574,22 +619,20 @@ function TypingIndicator() {
 
 /* ============================== message =============================== */
 
-function MessageBubble({ msg, onSuggestion }: { msg: ChatMessage; onSuggestion: (s: string) => void }) {
+function MessageBubble({
+  msg,
+  onSuggestion,
+  onCardAction,
+}: {
+  msg: ChatMessage;
+  onSuggestion: (s: string) => void;
+  onCardAction: (s: string) => void;
+}) {
   if (msg.suggestions && !msg.text && !msg.card) {
     return (
       <div className="flex max-w-[78%] gap-3">
         <span className="h-7 w-7 flex-shrink-0" />
-        <div className="flex flex-wrap gap-1.5">
-          {msg.suggestions.map((s) => (
-            <button
-              key={s}
-              onClick={() => onSuggestion(s)}
-              className="rounded-full border border-line bg-white px-3 py-1.5 text-[12.5px] text-ink-2 transition hover:border-ink hover:text-ink"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+        <SuggestionButtons suggestions={msg.suggestions} onSelect={onSuggestion} />
       </div>
     );
   }
@@ -620,10 +663,37 @@ function MessageBubble({ msg, onSuggestion }: { msg: ChatMessage; onSuggestion: 
           </div>
         ) : null}
 
-        {msg.card && <Card card={msg.card} onAction={onSuggestion} />}
+        {msg.card && <Card card={msg.card} onAction={onCardAction} />}
+
+        {msg.suggestions && msg.suggestions.length > 0 && (
+          <SuggestionButtons suggestions={msg.suggestions} onSelect={onCardAction} />
+        )}
 
         <MetaRow ts={msg.ts} isUser={isUser} transcribed={!!msg.voice} />
       </div>
+    </div>
+  );
+}
+
+function SuggestionButtons({
+  suggestions,
+  onSelect,
+}: {
+  suggestions: Array<{ label: string; say: string }>;
+  onSelect: (s: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {suggestions.map((s) => (
+        <button
+          key={`${s.label}-${s.say}`}
+          type="button"
+          onClick={() => onSelect(s.say)}
+          className="rounded-full border border-line bg-white px-3 py-1.5 text-[12.5px] text-ink-2 transition hover:border-ink hover:text-ink"
+        >
+          {s.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -727,18 +797,18 @@ function Card({ card, onAction }: { card: AgentCard; onAction?: (say: string) =>
   if (card.kind === "event_plan") {
     return (
       <div className="w-full max-w-[580px] overflow-hidden rounded-[18px] border border-[rgba(62,124,78,0.22)] bg-white shadow-[0_1px_0_rgba(22,20,16,0.02),0_14px_34px_-24px_rgba(22,20,16,0.2)]">
-        <div className="border-b border-line-2 bg-accent-soft px-4 py-3.5">
+        <div className="border-b border-line-2 bg-accent-soft px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
               <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent">Event plan</p>
               <h4 className="m-0 mt-1 text-[18px] font-semibold leading-tight text-ink">{card.event_name}</h4>
+              <p className="m-0 mt-1 text-[12.5px] leading-snug text-ink-2">{card.details}</p>
             </div>
             <Pill variant="green">Ready for approval</Pill>
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 text-[13px] text-ink-2 sm:grid-cols-2">
-          <PlanField label="Details" value={card.details} wide />
+        <div className="grid gap-2.5 p-3.5 text-[12.5px] text-ink-2 sm:grid-cols-2">
           <PlanField label="Date" value={card.event_date} />
           <PlanField label="Time" value={card.event_time} />
           <PlanField label="Location" value={card.location ?? "TBD"} />
@@ -749,9 +819,173 @@ function Card({ card, onAction }: { card: AgentCard; onAction?: (say: string) =>
           <PlanField label="Invoice amount" value={card.invoice_amount} />
         </div>
 
-        <div className="border-t border-line-2 px-4 py-3">
-          <p className="m-0 text-[13px] leading-relaxed text-ink">{card.approval_question}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+        <div className="border-t border-line-2 px-4 py-2.5">
+          <p className="m-0 text-[12.5px] leading-snug text-ink">{card.approval_question}</p>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            {card.actions.map((a) => (
+              <CardBtn key={a.label} variant={a.variant ?? "ghost"} onClick={() => onAction?.(a.say)}>
+                {a.label}
+              </CardBtn>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (card.kind === "bulk_outreach") {
+    return (
+      <div className="w-full max-w-[620px] overflow-hidden rounded-[18px] border border-line bg-white shadow-[0_1px_0_rgba(22,20,16,0.02),0_14px_34px_-24px_rgba(22,20,16,0.2)]">
+        <div className="border-b border-line-2 bg-[#F7F4EA] px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent">Bulk outreach</p>
+              <h4 className="m-0 mt-1 text-[18px] font-semibold leading-tight text-ink">{card.title}</h4>
+              <p className="m-0 mt-1 max-w-[52ch] text-[12.5px] leading-snug text-ink-2">{card.summary}</p>
+            </div>
+            <Pill variant={card.status === "complete" ? "green" : "default"}>{card.tag}</Pill>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+            <MiniStat label="Needed" value={card.counts.needed} />
+            <MiniStat label="Filled" value={card.counts.filled} />
+            <MiniStat label="Texts" value={card.counts.live_texts} />
+            <MiniStat label="Calls" value={card.counts.live_calls} />
+            <MiniStat label="Sim" value={card.counts.simulated_replies} />
+            <MiniStat label="Declined" value={card.counts.declined} />
+          </div>
+        </div>
+
+        <div className="max-h-[360px] overflow-y-auto px-3.5 py-3">
+          <div className="flex flex-col gap-1.5">
+            {card.rows.map((row) => (
+              <div
+                key={`${row.name}-${row.role}`}
+                className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-[10px] border border-line-2 bg-bg px-3 py-2 text-[12.5px] sm:grid-cols-[minmax(0,1fr)_92px_96px]"
+              >
+                <div className="min-w-0">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <b className="truncate text-[13px] font-medium text-ink">{row.name}</b>
+                    {row.live && <span className="font-mono text-[10px] uppercase tracking-wider text-accent">live</span>}
+                    {row.phone_last4 && <span className="font-mono text-[10px] text-muted">*{row.phone_last4}</span>}
+                  </div>
+                  <p className="m-0 mt-0.5 line-clamp-2 text-[12px] leading-snug text-ink-2">{row.role} - {row.response}</p>
+                  <p className="m-0 mt-0.5 truncate font-mono text-[10px] uppercase tracking-wider text-muted">{row.delivery_status}</p>
+                </div>
+                <span className="hidden self-start truncate font-mono text-[10px] uppercase tracking-wider text-muted sm:block">
+                  {row.channel}
+                </span>
+                <OutreachStatusPill status={row.status} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-line-2 px-4 py-2.5">
+          {card.evidence.length > 0 && (
+            <p className="m-0 mb-2 line-clamp-2 text-[12px] leading-snug text-muted">{card.evidence.join(" ")}</p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {card.actions.map((a) => (
+              <CardBtn key={a.label} variant={a.variant ?? "ghost"} onClick={() => onAction?.(a.say)}>
+                {a.label}
+              </CardBtn>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (card.kind === "invoice_email") {
+    return (
+      <div className="w-full max-w-[620px] overflow-hidden rounded-[18px] border border-line bg-white shadow-[0_1px_0_rgba(22,20,16,0.02),0_14px_34px_-24px_rgba(22,20,16,0.2)]">
+        <div className="border-b border-line-2 bg-[#F6F2E8] px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent">Invoice + AgentMail</p>
+              <h4 className="m-0 mt-1 text-[18px] font-semibold leading-tight text-ink">{card.title}</h4>
+              <p className="m-0 mt-1 max-w-[54ch] text-[12.5px] leading-snug text-ink-2">{card.summary}</p>
+            </div>
+            <Pill variant={card.status === "sent" ? "green" : "default"}>{card.tag}</Pill>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <MoneyStat label="Total" value={card.total} />
+            <MoneyStat label="Deposit" value={card.deposit} />
+            <MoneyStat label="Balance" value={card.balance_due} />
+          </div>
+        </div>
+
+        <div className="grid gap-2.5 px-3.5 py-3 text-[12.5px] text-ink-2 sm:grid-cols-2">
+          <PlanField label="Event" value={card.event.details} wide />
+          <PlanField label="Date" value={card.event.date} />
+          <PlanField label="Time" value={card.event.time} />
+          <PlanField label="Location" value={card.event.location} />
+          <PlanField label="Guests" value={card.event.guests} />
+        </div>
+
+        <div className="border-t border-line-2 px-3.5 py-3">
+          <small className="mb-2 block font-mono text-[9.5px] uppercase tracking-wider text-muted">Invoice lines</small>
+          <div className="grid gap-1.5 sm:grid-cols-3">
+            {card.line_items.map((item) => (
+              <div key={item.label} className="flex items-center justify-between gap-2 rounded-[10px] border border-line-2 bg-bg px-3 py-2 text-[12.5px]">
+                <span className="truncate text-ink-2">{item.label}</span>
+                <b className="font-semibold text-ink">{item.amount}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-line-2 px-3.5 py-3">
+          <small className="mb-2 block font-mono text-[9.5px] uppercase tracking-wider text-muted">AgentMail packets</small>
+          <div className="flex flex-col gap-1.5">
+            {card.emails.map((email) => (
+              <div
+                key={email.label}
+                className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-[10px] border border-line-2 bg-bg px-3 py-2 text-[12.5px]"
+              >
+                <div className="min-w-0">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <b className="truncate text-[13px] font-medium text-ink">{email.label}</b>
+                    <span className="truncate font-mono text-[10px] text-muted">{email.to}</span>
+                  </div>
+                  <p className="m-0 mt-0.5 truncate text-[12px] text-ink-2">{email.subject}</p>
+                  <p className="m-0 mt-0.5 line-clamp-1 font-mono text-[10px] uppercase tracking-wider text-muted">{email.detail}</p>
+                </div>
+                <EmailStatusPill status={email.status} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-line-2 px-3.5 py-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <small className="font-mono text-[9.5px] uppercase tracking-wider text-muted">Sponge contractor wallets</small>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted">{card.wallets.length} prepared</span>
+          </div>
+          <div className="max-h-[230px] overflow-y-auto">
+            <div className="flex flex-col gap-1.5">
+              {card.wallets.map((wallet) => (
+                <div key={wallet.wallet_id} className="grid grid-cols-[minmax(0,1fr)_74px] gap-2 rounded-[10px] border border-line-2 bg-white px-3 py-2 text-[12.5px]">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <b className="truncate text-[13px] font-medium text-ink">{wallet.name}</b>
+                      <span className="truncate text-[12px] text-ink-2">{wallet.role}</span>
+                    </div>
+                    <p className="m-0 mt-0.5 truncate font-mono text-[10px] text-muted">{wallet.shift} · {wallet.wallet_id}</p>
+                  </div>
+                  <b className="self-start justify-self-end text-[13px] font-semibold text-ink">{wallet.pay}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p className="m-0 mt-2 line-clamp-2 text-[12px] leading-snug text-muted">{card.cancellation_policy}</p>
+        </div>
+
+        <div className="border-t border-line-2 px-4 py-2.5">
+          {card.evidence.length > 0 && (
+            <p className="m-0 mb-2 line-clamp-2 text-[12px] leading-snug text-muted">{card.evidence.join(" ")}</p>
+          )}
+          <div className="flex flex-wrap gap-2">
             {card.actions.map((a) => (
               <CardBtn key={a.label} variant={a.variant ?? "ghost"} onClick={() => onAction?.(a.say)}>
                 {a.label}
@@ -906,9 +1140,59 @@ function Card({ card, onAction }: { card: AgentCard; onAction?: (say: string) =>
 function PlanField({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (
     <div className={wide ? "sm:col-span-2" : ""}>
-      <small className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-muted">{label}</small>
-      <span className="block rounded-[10px] border border-line-2 bg-bg px-3 py-2 leading-relaxed text-ink">{value}</span>
+      <small className="mb-1 block font-mono text-[9.5px] uppercase tracking-wider text-muted">{label}</small>
+      <span className="block rounded-[9px] border border-line-2 bg-bg px-2.5 py-1.5 leading-snug text-ink">{value}</span>
     </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-[9px] border border-line-2 bg-white px-2 py-1.5">
+      <small className="block font-mono text-[9px] uppercase tracking-wider text-muted">{label}</small>
+      <b className="text-[14px] font-semibold text-ink">{value}</b>
+    </div>
+  );
+}
+
+function MoneyStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[9px] border border-line-2 bg-white px-2 py-1.5">
+      <small className="block font-mono text-[9px] uppercase tracking-wider text-muted">{label}</small>
+      <b className="text-[14px] font-semibold text-ink">{value}</b>
+    </div>
+  );
+}
+
+function OutreachStatusPill({ status }: { status: string }) {
+  const cls =
+    status === "confirmed" || status === "backup_confirmed"
+      ? "bg-accent-soft text-accent"
+      : status === "declined"
+        ? "bg-urgent-soft text-urgent"
+        : status === "ready"
+          ? "bg-[#E1EBF1] text-[#315B7A]"
+          : "bg-[#F0EDE3] text-muted";
+  return (
+    <span className={`self-start justify-self-end whitespace-nowrap rounded-full px-2 py-1 font-mono text-[10px] uppercase tracking-wider ${cls}`}>
+      {status.replace("_", " ")}
+    </span>
+  );
+}
+
+function EmailStatusPill({ status }: { status: string }) {
+  const cls =
+    status === "sent"
+      ? "bg-accent-soft text-accent"
+      : status === "failed"
+        ? "bg-urgent-soft text-urgent"
+        : status === "ready"
+          ? "bg-[#E1EBF1] text-[#315B7A]"
+          : "bg-[#F0EDE3] text-muted";
+  return (
+    <span className={`self-start justify-self-end whitespace-nowrap rounded-full px-2 py-1 font-mono text-[10px] uppercase tracking-wider ${cls}`}>
+      {status}
+    </span>
   );
 }
 

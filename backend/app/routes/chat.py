@@ -4,7 +4,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import ai, db, event_plan
+from .. import ai, bulk_outreach, db, event_plan, invoice_email
 
 
 logger = logging.getLogger("crewloop.chat")
@@ -62,6 +62,85 @@ class EventPlan(BaseModel):
     approval_question: str
 
 
+class BulkOutreachCounts(BaseModel):
+    needed: int
+    filled: int
+    live_texts: int
+    live_calls: int
+    simulated_replies: int
+    declined: int
+
+
+class BulkOutreachRow(BaseModel):
+    name: str
+    role: str
+    channel: str
+    phone_last4: str = ""
+    status: str
+    response: str
+    live: bool = False
+    delivery_status: str = ""
+
+
+class BulkOutreachSnapshot(BaseModel):
+    title: str
+    tag: str
+    status: str
+    summary: str
+    counts: BulkOutreachCounts
+    rows: list[BulkOutreachRow] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+
+
+class InvoiceLineItem(BaseModel):
+    label: str
+    amount: str
+
+
+class InvoiceInventoryItem(BaseModel):
+    name: str
+    qty: str
+    amount: str
+
+
+class InvoiceEmailReceipt(BaseModel):
+    label: str
+    to: str
+    subject: str
+    status: str
+    provider: str
+    id: str | None = None
+    detail: str
+
+
+class SpongeWalletSnapshot(BaseModel):
+    name: str
+    role: str
+    arrival: str
+    shift: str
+    pay: str
+    wallet_id: str
+    status: str
+    release_rules: list[str] = Field(default_factory=list)
+
+
+class InvoiceEmailSnapshot(BaseModel):
+    title: str
+    tag: str
+    status: str
+    summary: str
+    event: dict[str, str]
+    line_items: list[InvoiceLineItem] = Field(default_factory=list)
+    inventory_items: list[InvoiceInventoryItem] = Field(default_factory=list)
+    total: str
+    deposit: str
+    balance_due: str
+    emails: list[InvoiceEmailReceipt] = Field(default_factory=list)
+    wallets: list[SpongeWalletSnapshot] = Field(default_factory=list)
+    cancellation_policy: str
+    evidence: list[str] = Field(default_factory=list)
+
+
 class ShortlistEntry(BaseModel):
     id: str | None = None
     name: str
@@ -76,6 +155,8 @@ class ChatResponse(BaseModel):
     intent: str | None = None
     event_draft: EventDraft | None = None
     event_plan: EventPlan | None = None
+    bulk_outreach: BulkOutreachSnapshot | None = None
+    invoice_email: InvoiceEmailSnapshot | None = None
     action_chips: list[ActionChip] = Field(default_factory=list)
     shortlist: list[ShortlistEntry] = Field(default_factory=list)
 
@@ -173,6 +254,66 @@ async def chat_with_loop(payload: ChatRequest) -> ChatResponse:
             action_chips=[
                 ActionChip(label="Shortlist crew", say="Shortlist the best crew for this event"),
                 ActionChip(label="Edit plan", say="I want to edit the event plan first"),
+            ],
+        )
+
+    if invoice_email.is_invoice_send_request(latest_text):
+        result = InvoiceEmailSnapshot(**await invoice_email.send_invoice_emails(send_real=True))
+        return ChatResponse(
+            reply=(
+                "The AgentMail invoice packet is complete. It includes the owner spend log, "
+                "customer invoice, and contractor schedule packet with Sponge wallet ids."
+            ),
+            intent="invoice_email_sent",
+            invoice_email=result,
+            action_chips=[
+                ActionChip(label="Set payment holds", say="Set Sponge payment holds for the finalized roster"),
+                ActionChip(label="Owner approval", say="Prepare the owner approval step before payout release"),
+            ],
+        )
+
+    if invoice_email.is_invoice_preview_request(latest_text):
+        preview = InvoiceEmailSnapshot(**invoice_email.build_invoice_preview())
+        return ChatResponse(
+            reply=(
+                "I prepared the invoice and AgentMail packet. Review the totals, email targets, "
+                "and Sponge wallet setup before sending."
+            ),
+            intent="invoice_email_ready",
+            invoice_email=preview,
+            action_chips=[
+                ActionChip(label="Send emails", say="Send the AgentMail invoice emails now"),
+                ActionChip(label="Edit invoice", say="Edit the invoice amount before sending"),
+            ],
+        )
+
+    if bulk_outreach.is_bulk_outreach_start(latest_text):
+        result = BulkOutreachSnapshot(**await bulk_outreach.execute_bulk_outreach(send_real=True))
+        return ChatResponse(
+            reply=(
+                "Bulk outreach is complete. I contacted the live targets, simulated the remaining "
+                "replies, filled the backup slot, and finalized the roster."
+            ),
+            intent="bulk_outreach_sent",
+            bulk_outreach=result,
+            action_chips=[
+                ActionChip(label="Set schedule", say="Create the event schedule for the finalized roster"),
+                ActionChip(label="Prepare invoice", say="Prepare the client invoice next"),
+            ],
+        )
+
+    if bulk_outreach.is_shortlist_request(latest_text):
+        plan = BulkOutreachSnapshot(**bulk_outreach.build_bulk_outreach_plan())
+        return ChatResponse(
+            reply=(
+                "I have the 10-person shortlist ready. Approve bulk outreach and I’ll text the "
+                "three live contacts, call the event lead, then simulate the remaining replies."
+            ),
+            intent="bulk_outreach_ready",
+            bulk_outreach=plan,
+            action_chips=[
+                ActionChip(label="Start outreach", say="Start bulk outreach now"),
+                ActionChip(label="Edit roster", say="Edit the contractor roster before outreach"),
             ],
         )
 

@@ -126,3 +126,49 @@ async def approve_event_supplies(event_id: str) -> dict[str, Any]:
     if not items:
         raise HTTPException(status_code=409, detail="no supplies to approve — recommend first")
     return {"event": event, "items": items, "summary": supplies.supplies_summary(items)}
+
+
+@router.post("/{event_id}/supplies/browse")
+async def start_live_browse_endpoint(event_id: str) -> dict[str, Any]:
+    """Fire one Browser Use Cloud session per supply item (in parallel).
+    Returns the items with `bu_session_id` and `bu_live_url` populated so the
+    UI can embed each session in an iframe."""
+    event = await _event_or_404(event_id)
+    items = await supplies.start_live_browse(UUID(event_id))
+    if not items:
+        raise HTTPException(status_code=409, detail="no supplies on this event")
+    return {"event": event, "items": items, "summary": supplies.supplies_summary(items)}
+
+
+@router.get("/{event_id}/supplies/browse")
+async def poll_live_browse_endpoint(event_id: str) -> dict[str, Any]:
+    """Poll Browser Use for the latest state of every session attached to
+    this event and return the refreshed item list."""
+    event = await _event_or_404(event_id)
+    items = await supplies.refresh_live_browse(UUID(event_id))
+    return {"event": event, "items": items, "summary": supplies.supplies_summary(items)}
+
+
+class PayRequest(BaseModel):
+    method: str = Field(default="sponge", pattern="^(sponge|stripe_mpp)$")
+
+
+@router.post("/{event_id}/supplies/pay")
+async def pay_event_supplies(event_id: str, payload: PayRequest = PayRequest()) -> dict[str, Any]:
+    """Settle the supply purchase via Sponge wallet (default) or Stripe MPP.
+    Marks every approved item as paid and attaches a fake reference id."""
+    event = await _event_or_404(event_id)
+    items = await supplies.pay_for_supplies(UUID(event_id), method=payload.method)
+    paid = [i for i in items if i.get("payment_status") == "paid"]
+    if not paid:
+        raise HTTPException(status_code=409, detail="no approved supplies to pay — approve first")
+    return {
+        "event": event,
+        "items": items,
+        "summary": supplies.supplies_summary(items),
+        "payment": {
+            "method": payload.method,
+            "count": len(paid),
+            "total": round(sum(i.get("total_price") or 0 for i in paid), 2),
+        },
+    }

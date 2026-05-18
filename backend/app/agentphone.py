@@ -34,6 +34,35 @@ class AgentPhoneClient:
             raise AgentPhoneError(r.status_code, r.text)
         return r.json()
 
+    async def _patch(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        r = await self._client.patch(path, json=payload)
+        if r.status_code >= 400:
+            raise AgentPhoneError(r.status_code, r.text)
+        return r.json()
+
+    async def update_agent(
+        self,
+        *,
+        agent_id: str | None = None,
+        voice_mode: str | None = None,
+        system_prompt: str | None = None,
+        begin_message: str | None = None,
+        voice: str | None = None,
+    ) -> dict[str, Any]:
+        aid = agent_id or settings.agentphone_agent_id
+        if not aid:
+            raise RuntimeError("AGENTPHONE_AGENT_ID is not configured")
+        payload: dict[str, Any] = {}
+        if voice_mode:
+            payload["voiceMode"] = voice_mode
+        if system_prompt:
+            payload["systemPrompt"] = system_prompt
+        if begin_message:
+            payload["beginMessage"] = begin_message
+        if voice:
+            payload["voice"] = voice
+        return await self._patch(f"/agents/{aid}", payload)
+
     async def send_message(
         self,
         to_number: str,

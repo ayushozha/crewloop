@@ -4,7 +4,7 @@ Two surfaces:
 
 - generate_sms_reply(phone)         → gemini-2.5-flash. Short, friendly SMS replies.
                                        Pulls last 20 messages of conversation history.
-- generate_voice_reply(turns, ...)  → gemini-2.5-pro. The agent's spoken next turn.
+- generate_voice_reply(turns, ...)  → gemini-3.1-pro-preview. The agent's spoken next turn.
                                        `turns` is an ordered list of {"role": "user"|"model", "text": str}.
 
 Model choice is keyed on complexity, not channel — voice and multimodal need
@@ -51,6 +51,13 @@ This is real-time voice — your output is spoken aloud. So:
 - Get a clean yes or no. If yes: "Locking that in — I'll text you the address."
 - If they decline, thank them briefly and end the call: respond with hangup intent.
 - Never claim to be human.
+
+Use a strong dispatch flow:
+1. Open with the job context already provided in the call transcript.
+2. Answer simple questions directly from that context.
+3. Ask for a clear yes/no only after role, time, location, and pay are clear.
+4. If confirmed, restate the assignment and say a text confirmation is coming.
+5. If they are unavailable, thank them and end cleanly.
 """
 
 CHAT_SYSTEM_PROMPT = """You are Loop, CrewLoop's AI dispatcher, talking with the business owner inside their web dashboard.

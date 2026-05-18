@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from . import ai, db
+from . import ai, browser_use_cloud, db
 from .config import settings
 
 
@@ -39,19 +39,19 @@ logger = logging.getLogger("crewloop.supplies")
 
 # Vendors we pretend to have shopped against. Picked deterministically by item
 # category so the demo is stable across reloads.
-VENDOR_BY_CATEGORY: dict[str, dict[str, str]] = {
-    "spirit": {"name": "K&L Wine Merchants", "host": "https://www.klwines.com"},
-    "liqueur": {"name": "K&L Wine Merchants", "host": "https://www.klwines.com"},
-    "wine": {"name": "K&L Wine Merchants", "host": "https://www.klwines.com"},
-    "beer": {"name": "Bevmo SoMa", "host": "https://www.bevmo.com"},
-    "mixer": {"name": "Restaurant Depot SF", "host": "https://www.restaurantdepot.com"},
-    "syrup": {"name": "Cocktail Kingdom", "host": "https://www.cocktailkingdom.com"},
-    "garnish": {"name": "Local Produce Co-op", "host": "https://www.bifoods.com"},
-    "tool": {"name": "Cocktail Kingdom", "host": "https://www.cocktailkingdom.com"},
-    "glassware": {"name": "WebstaurantStore", "host": "https://www.webstaurantstore.com"},
-    "consumable": {"name": "WebstaurantStore", "host": "https://www.webstaurantstore.com"},
+VENDOR_BY_CATEGORY: dict[str, dict[str, Any]] = {
+    "spirit":     {"name": "K&L Wine Merchants",  "host": "https://www.klwines.com",          "domains": ["klwines.com", "amazon.com"]},
+    "liqueur":    {"name": "K&L Wine Merchants",  "host": "https://www.klwines.com",          "domains": ["klwines.com", "amazon.com"]},
+    "wine":       {"name": "K&L Wine Merchants",  "host": "https://www.klwines.com",          "domains": ["klwines.com", "amazon.com"]},
+    "beer":       {"name": "Bevmo SoMa",          "host": "https://www.bevmo.com",            "domains": ["bevmo.com"]},
+    "mixer":      {"name": "Amazon Fresh",        "host": "https://www.amazon.com",           "domains": ["amazon.com"]},
+    "syrup":      {"name": "Cocktail Kingdom",    "host": "https://www.cocktailkingdom.com",  "domains": ["cocktailkingdom.com", "amazon.com"]},
+    "garnish":    {"name": "Walmart",             "host": "https://www.walmart.com",          "domains": ["walmart.com", "instacart.com"]},
+    "tool":       {"name": "Cocktail Kingdom",    "host": "https://www.cocktailkingdom.com",  "domains": ["cocktailkingdom.com", "webstaurantstore.com"]},
+    "glassware":  {"name": "WebstaurantStore",    "host": "https://www.webstaurantstore.com", "domains": ["webstaurantstore.com"]},
+    "consumable": {"name": "WebstaurantStore",    "host": "https://www.webstaurantstore.com", "domains": ["webstaurantstore.com", "amazon.com"]},
 }
-DEFAULT_VENDOR = {"name": "Restaurant Depot SF", "host": "https://www.restaurantdepot.com"}
+DEFAULT_VENDOR: dict[str, Any] = {"name": "Amazon", "host": "https://www.amazon.com", "domains": ["amazon.com"]}
 
 
 SUPPLIES_SCHEMA: dict[str, Any] = {
@@ -341,10 +341,157 @@ def supplies_summary(items: list[dict[str, Any]]) -> dict[str, Any]:
 # helpers
 # ---------------------------------------------------------------------------
 
-def _vendor_for_category(category: str | None) -> dict[str, str]:
+def _vendor_for_category(category: str | None) -> dict[str, Any]:
     if not category:
         return DEFAULT_VENDOR
     return VENDOR_BY_CATEGORY.get(category, DEFAULT_VENDOR)
+
+
+def _browse_task_text(supply: dict[str, Any]) -> str:
+    name = supply.get("name") or "item"
+    qty = supply.get("qty") or 1
+    unit = supply.get("unit") or "each"
+    vendor = supply.get("vendor") or "Amazon"
+    host = supply.get("vendor_url") or "https://www.amazon.com"
+    return (
+        f"Open {host}, search for {name}, pick the best-priced {qty} {unit} option from {vendor} "
+        f"and add it to the cart. Report the actual unit price, the product page URL, and the "
+        f"estimated delivery ETA. Do NOT check out."
+    )
+
+
+async def start_live_browse(event_id: UUID | str) -> list[dict[str, Any]]:
+    """For every supply tied to this event, fire a Browser Use Cloud session
+    in parallel. Persists session_id + live_url so the UI can embed each one
+    in an iframe. Idempotent: re-running starts new sessions only for items
+    that don't already have a non-failed session.
+    """
+    import asyncio
+
+    items = await list_supplies(event_id)
+    needs_start = [s for s in items if not s.get("bu_live_url") and s.get("bu_status") != "completed"]
+    if not needs_start:
+        return items
+
+    async def _one(supply: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        category = None
+        # Look up category from the matched inventory item, if any.
+        if supply.get("inventory_item_id"):
+            async with db.pool().acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT category FROM inventory_items WHERE id = $1",
+                    supply["inventory_item_id"],
+                )
+                if row:
+                    category = row["category"]
+        vendor = _vendor_for_category(category)
+        domains = vendor.get("domains") or ["amazon.com"]
+        task_text = _browse_task_text(supply)
+        session = await browser_use_cloud.start_session(
+            task=task_text,
+            allowed_domains=domains,
+            recording=True,
+            max_steps=20,
+        )
+        return supply["id"], session
+
+    started = await asyncio.gather(*[_one(s) for s in needs_start], return_exceptions=True)
+
+    update_sql = """
+        UPDATE event_supplies SET
+            bu_session_id = $2,
+            bu_live_url = $3,
+            bu_status = $4,
+            bu_step_count = $5,
+            bu_cost_usd = $6
+        WHERE id = $1
+    """
+    async with db.pool().acquire() as conn:
+        for entry in started:
+            if isinstance(entry, BaseException):
+                continue
+            sid, session = entry
+            await conn.execute(
+                update_sql, sid,
+                session.get("id"), session.get("live_url"),
+                session.get("status") or "running",
+                session.get("step_count") or 0,
+                session.get("cost_usd") or 0,
+            )
+
+    return await list_supplies(event_id)
+
+
+async def refresh_live_browse(event_id: UUID | str) -> list[dict[str, Any]]:
+    """Poll Browser Use for the latest state of each session attached to the
+    event, and persist what changed (status, step_count, cost, output)."""
+    import asyncio, json as _json
+
+    items = await list_supplies(event_id)
+    targets = [s for s in items if s.get("bu_session_id") and s.get("bu_status") not in {"completed", "idle", "error", "timed_out"}]
+    if not targets:
+        return items
+
+    async def _one(supply: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        return supply["id"], await browser_use_cloud.get_session(supply["bu_session_id"])
+
+    results = await asyncio.gather(*[_one(s) for s in targets], return_exceptions=True)
+
+    update_sql = """
+        UPDATE event_supplies SET
+            bu_status = $2,
+            bu_live_url = COALESCE($3, bu_live_url),
+            bu_step_count = $4,
+            bu_cost_usd = $5,
+            bu_output = $6::jsonb
+        WHERE id = $1
+    """
+    async with db.pool().acquire() as conn:
+        for entry in results:
+            if isinstance(entry, BaseException):
+                continue
+            sid, sess = entry
+            output = sess.get("output")
+            output_json = _json.dumps(output) if output is not None else None
+            await conn.execute(
+                update_sql, sid,
+                sess.get("status") or "running",
+                sess.get("live_url"),
+                sess.get("step_count") or 0,
+                sess.get("cost_usd") or 0,
+                output_json,
+            )
+
+    return await list_supplies(event_id)
+
+
+async def pay_for_supplies(event_id: UUID | str, *, method: str = "sponge") -> list[dict[str, Any]]:
+    """Mark every approved supply as paid via the requested method.
+    method: "sponge" → Sponge wallet hold;  "stripe_mpp" → Stripe MPP.
+    No real outbound call — Sponge/Stripe are spec-marked as demo-controlled.
+    """
+    import secrets
+
+    items = await list_supplies(event_id)
+    eligible = [s for s in items if s.get("status") == "approved" and not s.get("paid_at")]
+    if not eligible:
+        return items
+
+    update_sql = """
+        UPDATE event_supplies SET
+            payment_status = 'paid',
+            payment_method = $2,
+            payment_ref = $3,
+            paid_at = now()
+        WHERE id = $1
+    """
+    async with db.pool().acquire() as conn:
+        for s in eligible:
+            ref_prefix = "spg" if method == "sponge" else "pi"
+            ref = f"{ref_prefix}_{secrets.token_hex(8)}"
+            await conn.execute(update_sql, s["id"], method, ref)
+
+    return await list_supplies(event_id)
 
 
 def _eta_window(vendor: str) -> str:
@@ -368,8 +515,9 @@ def _evidence_note(supply: dict[str, Any]) -> str:
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
+    import json as _json
     d = dict(row)
-    for k in ("qty", "unit_price", "total_price"):
+    for k in ("qty", "unit_price", "total_price", "bu_cost_usd"):
         if d.get(k) is not None:
             d[k] = float(d[k])
     if d.get("id") is not None:
@@ -378,4 +526,9 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         d["event_id"] = str(d["event_id"])
     if d.get("inventory_item_id") is not None:
         d["inventory_item_id"] = str(d["inventory_item_id"])
+    if isinstance(d.get("bu_output"), str):
+        try:
+            d["bu_output"] = _json.loads(d["bu_output"])
+        except _json.JSONDecodeError:
+            pass
     return d

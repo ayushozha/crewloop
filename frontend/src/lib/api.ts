@@ -41,10 +41,96 @@ export interface ChatEventPlan {
   approval_question: string;
 }
 
+export interface ChatBulkOutreachRow {
+  name: string;
+  role: string;
+  channel: string;
+  phone_last4: string;
+  status: string;
+  response: string;
+  live: boolean;
+  delivery_status: string;
+}
+
+export interface ChatBulkOutreach {
+  title: string;
+  tag: string;
+  status: string;
+  summary: string;
+  counts: {
+    needed: number;
+    filled: number;
+    live_texts: number;
+    live_calls: number;
+    simulated_replies: number;
+    declined: number;
+  };
+  rows: ChatBulkOutreachRow[];
+  evidence: string[];
+}
+
+export interface ChatInvoiceLineItem {
+  label: string;
+  amount: string;
+}
+
+export interface ChatInvoiceInventoryItem {
+  name: string;
+  qty: string;
+  amount: string;
+}
+
+export interface ChatInvoiceEmailReceipt {
+  label: string;
+  to: string;
+  subject: string;
+  status: string;
+  provider: string;
+  id?: string | null;
+  detail: string;
+}
+
+export interface ChatSpongeWallet {
+  name: string;
+  role: string;
+  arrival: string;
+  shift: string;
+  pay: string;
+  wallet_id: string;
+  status: string;
+  release_rules: string[];
+}
+
+export interface ChatInvoiceEmail {
+  title: string;
+  tag: string;
+  status: string;
+  summary: string;
+  event: {
+    name: string;
+    details: string;
+    date: string;
+    time: string;
+    location: string;
+    guests: string;
+  };
+  line_items: ChatInvoiceLineItem[];
+  inventory_items: ChatInvoiceInventoryItem[];
+  total: string;
+  deposit: string;
+  balance_due: string;
+  emails: ChatInvoiceEmailReceipt[];
+  wallets: ChatSpongeWallet[];
+  cancellation_policy: string;
+  evidence: string[];
+}
+
 export interface ChatResponse {
   reply: string;
   intent?: string | null;
   event_plan?: ChatEventPlan | null;
+  bulk_outreach?: ChatBulkOutreach | null;
+  invoice_email?: ChatInvoiceEmail | null;
   action_chips?: ChatActionChip[];
 }
 
@@ -66,6 +152,18 @@ export interface SupplyItem {
   image_path?: string | null;
   notes?: string | null;
   approved_at?: string | null;
+  // Live-browse (Browser Use Cloud)
+  bu_session_id?: string | null;
+  bu_live_url?: string | null;
+  bu_status?: "running" | "idle" | "stopped" | "error" | "timed_out" | string | null;
+  bu_step_count?: number | null;
+  bu_cost_usd?: number | null;
+  bu_output?: unknown;
+  // Payment (Sponge wallet / Stripe MPP)
+  payment_status?: "paid" | "pending" | "held" | "failed" | string | null;
+  payment_method?: "sponge" | "stripe_mpp" | string | null;
+  payment_ref?: string | null;
+  paid_at?: string | null;
 }
 
 export interface SuppliesResponse {
@@ -200,6 +298,23 @@ export const api = {
     request<SuppliesResponse>(
       `/api/events/${encodeURIComponent(eventId)}/supplies/approve`,
       { method: "POST" },
+    ),
+
+  startLiveBrowse: (eventId: string) =>
+    request<SuppliesResponse>(
+      `/api/events/${encodeURIComponent(eventId)}/supplies/browse`,
+      { method: "POST" },
+    ),
+
+  pollLiveBrowse: (eventId: string) =>
+    request<SuppliesResponse>(
+      `/api/events/${encodeURIComponent(eventId)}/supplies/browse`,
+    ),
+
+  paySupplies: (eventId: string, method: "sponge" | "stripe_mpp" = "sponge") =>
+    request<SuppliesResponse & { payment: { method: string; count: number; total: number } }>(
+      `/api/events/${encodeURIComponent(eventId)}/supplies/pay`,
+      { method: "POST", body: JSON.stringify({ method }) },
     ),
 
   // Dispatch-room workflow actions (parallel-session backend routes).
