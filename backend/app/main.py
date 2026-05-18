@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .routes import browser, calls, chat, contractors, conversations, dispatch, events, inventory, jobs, sms, webhooks
+from .routes import browser, calls, chat, contractors, conversations, dispatch, events, inventory, jobs, sms, voice_call, webhooks
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
