@@ -38,6 +38,31 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS messages_conversation_created_idx
   ON messages (conversation_id, created_at);
 
+CREATE TABLE IF NOT EXISTS chat_threads (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title      text NOT NULL,
+  summary    text,
+  status     text NOT NULL DEFAULT 'active',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS chat_threads_updated_at_idx
+  ON chat_threads (updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id   uuid NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+  role        text NOT NULL CHECK (role IN ('user','agent')),
+  body        text NOT NULL DEFAULT '',
+  payload     jsonb NOT NULL DEFAULT '{}',
+  attachments jsonb NOT NULL DEFAULT '[]',
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS chat_messages_thread_created_idx
+  ON chat_messages (thread_id, created_at);
+
 CREATE TABLE IF NOT EXISTS calls (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   agentphone_call_id   text UNIQUE,
@@ -172,6 +197,84 @@ ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS payment_status  text;
 ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS payment_method  text;
 ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS payment_ref     text;
 ALTER TABLE event_supplies ADD COLUMN IF NOT EXISTS paid_at         timestamptz;
+
+CREATE TABLE IF NOT EXISTS event_plans (
+  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id                 uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  roles                  jsonb NOT NULL DEFAULT '[]',
+  required_count_by_role jsonb NOT NULL DEFAULT '{}',
+  responsibilities       text,
+  estimated_labor_cost   numeric(10,2) NOT NULL DEFAULT 0,
+  total_crew             integer NOT NULL DEFAULT 0,
+  approval_status        text NOT NULL DEFAULT 'draft',
+  approved_at            timestamptz,
+  created_at             timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS event_plans_job_idx ON event_plans (job_id);
+
+CREATE TABLE IF NOT EXISTS schedules (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id        uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  contractor_id uuid REFERENCES contractors(id) ON DELETE SET NULL,
+  contractor_name text,
+  role          text NOT NULL,
+  start_time    text,
+  end_time      text,
+  status        text NOT NULL DEFAULT 'scheduled',
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS schedules_job_idx ON schedules (job_id);
+CREATE INDEX IF NOT EXISTS schedules_contractor_idx ON schedules (contractor_id);
+
+CREATE TABLE IF NOT EXISTS client_invoices (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id           uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  client_email     text,
+  labor_amount     numeric(10,2) NOT NULL DEFAULT 0,
+  supplies_amount  numeric(10,2) NOT NULL DEFAULT 0,
+  service_fee      numeric(10,2) NOT NULL DEFAULT 0,
+  deposit_amount   numeric(10,2) NOT NULL DEFAULT 0,
+  total_amount     numeric(10,2) NOT NULL DEFAULT 0,
+  status           text NOT NULL DEFAULT 'draft',
+  provider_state   jsonb,
+  agentmail_id     text,
+  sent_at          timestamptz,
+  paid_at          timestamptz,
+  created_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS client_invoices_job_idx ON client_invoices (job_id);
+
+CREATE TABLE IF NOT EXISTS worker_payments (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id             uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  contractor_id      uuid REFERENCES contractors(id) ON DELETE SET NULL,
+  contractor_name    text,
+  schedule_id        uuid REFERENCES schedules(id) ON DELETE SET NULL,
+  amount             numeric(10,2) NOT NULL DEFAULT 0,
+  status             text NOT NULL DEFAULT 'held',
+  release_conditions jsonb NOT NULL DEFAULT '[]',
+  receipt_url        text,
+  provider_ref       text,
+  held_at            timestamptz,
+  released_at        timestamptz,
+  created_at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS worker_payments_job_idx ON worker_payments (job_id);
+CREATE INDEX IF NOT EXISTS worker_payments_status_idx ON worker_payments (status);
+
+CREATE TABLE IF NOT EXISTS proofs (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id        uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  contractor_id uuid REFERENCES contractors(id) ON DELETE SET NULL,
+  type          text NOT NULL,
+  content_url   text,
+  detail        text,
+  status        text NOT NULL DEFAULT 'pending',
+  received_at   timestamptz,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS proofs_job_idx ON proofs (job_id);
+CREATE INDEX IF NOT EXISTS proofs_status_idx ON proofs (status);
 """
 
 

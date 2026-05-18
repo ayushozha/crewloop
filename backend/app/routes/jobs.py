@@ -81,9 +81,25 @@ class BrowserSourceRequest(BaseModel):
 
 async def _job_or_404(job_id: UUID) -> dict[str, Any]:
     job = await repo.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="job not found")
-    return job
+    if job:
+        return job
+    # Fallback: the repo layer falls back to a local JSON store for some demo
+    # paths. Seeded events live in the real Postgres `jobs` table only, so try
+    # there before giving up.
+    from .. import db as _db
+    try:
+        async with _db.pool().acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM jobs WHERE id = $1", job_id)
+        if row:
+            d = dict(row)
+            for k in ("id",):
+                d[k] = str(d[k]) if d.get(k) is not None else d.get(k)
+            if d.get("pay_amount") is not None:
+                d["pay_amount"] = float(d["pay_amount"])
+            return d
+    except Exception:
+        pass
+    raise HTTPException(status_code=404, detail="job not found")
 
 
 @router.post("/jobs")
@@ -267,3 +283,199 @@ async def browser_sync(job_id: UUID) -> dict[str, Any]:
         metadata={"browser_source_id": source.get("id") if source else None},
     )
     return {"browser_source": source, "status": "filled"}
+
+
+# ---------------------------------------------------------------------------
+# Spec §10 fulfillment endpoints (event plan, schedule, invoice, payments,
+# proofs). Persistence backed by the new tables in backend/app/db.py.
+# ---------------------------------------------------------------------------
+
+from .. import fulfillment  # placed here to avoid a circular import at module top
+
+
+class ScheduleAssignment(BaseModel):
+    contractor_id: str | None = None
+    contractor_name: str | None = None
+    role: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+    status: str | None = None
+
+
+class ScheduleRequest(BaseModel):
+    assignments: list[ScheduleAssignment] = Field(default_factory=list)
+
+
+class InvoiceRequest(BaseModel):
+    client_email: str | None = None
+    service_fee_rate: float = 0.10
+    deposit_rate: float = 0.50
+
+
+class ProofPostRequest(BaseModel):
+    type: str = Field(..., pattern="^(sms|photo|qr|manager_approval|call|timesheet)$")
+    detail: str | None = None
+    contractor_id: str | None = None
+    content_url: str | None = None
+    status: str = "received"
+
+
+@router.post("/jobs/{job_id}/infer-event-plan")
+async def infer_event_plan(job_id: UUID) -> dict[str, Any]:
+    job = await _job_or_404(job_id)
+    plan_body = await fulfillment.infer_event_plan_for_job(job)
+    saved = await fulfillment.persist_event_plan(job_id, plan_body)
+    await repo.create_event(
+        job_id=job_id,
+        type="event_plan_drafted",
+        content=f"Event plan drafted: {saved['total_crew']} crew, est. ${saved['estimated_labor_cost']:.2f}",
+        metadata={"event_plan_id": saved["id"]},
+    )
+    return {"event_plan": saved, "job": job}
+
+
+@router.get("/jobs/{job_id}/event-plans")
+async def list_job_event_plans(job_id: UUID) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    items = await fulfillment.list_event_plans(job_id)
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/jobs/{job_id}/event-plans/{plan_id}/approve")
+async def approve_plan(job_id: UUID, plan_id: UUID) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    plan = await fulfillment.approve_event_plan(plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="event plan not found")
+    await repo.create_event(
+        job_id=job_id, type="event_plan_approved",
+        content=f"Event plan approved: {plan['total_crew']} crew",
+        metadata={"event_plan_id": plan["id"]},
+    )
+    return {"event_plan": plan}
+
+
+@router.post("/jobs/{job_id}/schedule")
+async def schedule_endpoint(job_id: UUID, payload: ScheduleRequest) -> dict[str, Any]:
+    job = await _job_or_404(job_id)
+    assignments = [a.model_dump() for a in payload.assignments]
+    if not assignments:
+        # Auto-derive from approved/draft event plan if owner didn't supply.
+        plans = await fulfillment.list_event_plans(job_id)
+        plan = next((p for p in plans if p["approval_status"] == "approved"), plans[0] if plans else None)
+        if plan:
+            for r in plan["roles"]:
+                for i in range(int(r.get("count") or 0)):
+                    assignments.append({"role": r.get("role")})
+    schedule = await fulfillment.create_schedule(job_id, job, assignments)
+    await repo.create_event(
+        job_id=job_id, type="schedule_created",
+        content=f"Schedule created: {len(schedule)} slot(s)",
+        metadata={"count": len(schedule)},
+    )
+    return {"items": schedule, "count": len(schedule), "job": job}
+
+
+@router.get("/jobs/{job_id}/schedule")
+async def list_schedule_endpoint(job_id: UUID) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    items = await fulfillment.list_schedule(job_id)
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/jobs/{job_id}/invoice")
+async def invoice_endpoint(job_id: UUID, payload: InvoiceRequest = InvoiceRequest()) -> dict[str, Any]:
+    job = await _job_or_404(job_id)
+    inv = await fulfillment.generate_invoice(
+        job_id, job,
+        client_email=payload.client_email,
+        service_fee_rate=payload.service_fee_rate,
+        deposit_rate=payload.deposit_rate,
+    )
+    await repo.create_event(
+        job_id=job_id, type="invoice_drafted",
+        content=f"Invoice drafted: ${inv['total_amount']:.2f}",
+        metadata={"invoice_id": inv["id"]},
+    )
+    return {"invoice": inv}
+
+
+@router.post("/jobs/{job_id}/send-invoice")
+async def send_invoice_endpoint(job_id: UUID) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    inv = await fulfillment.send_invoice(job_id)
+    if not inv:
+        raise HTTPException(status_code=409, detail="no draft invoice to send")
+    await repo.create_event(
+        job_id=job_id, type="invoice_sent",
+        content=f"Invoice emailed to {inv['client_email']} (AgentMail {inv['agentmail_id']})",
+        metadata={"invoice_id": inv["id"], "agentmail_id": inv["agentmail_id"]},
+    )
+    return {"invoice": inv}
+
+
+@router.get("/jobs/{job_id}/invoices")
+async def list_invoices_endpoint(job_id: UUID) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    items = await fulfillment.list_invoices(job_id)
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/jobs/{job_id}/payment-holds")
+async def payment_holds_endpoint(job_id: UUID) -> dict[str, Any]:
+    job = await _job_or_404(job_id)
+    holds = await fulfillment.create_payment_holds(job_id, job)
+    total = round(sum(h["amount"] for h in holds), 2)
+    await repo.create_event(
+        job_id=job_id, type="worker_payments_held",
+        content=f"{len(holds)} worker pay holds opened on Sponge — ${total:.2f}",
+        metadata={"count": len(holds), "total": total},
+    )
+    return {"items": holds, "count": len(holds), "total": total}
+
+
+@router.post("/jobs/{job_id}/release-payments")
+async def release_payments_endpoint(job_id: UUID) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    released = await fulfillment.release_payments(job_id)
+    total = round(sum(h["amount"] for h in released), 2)
+    if released:
+        await repo.create_event(
+            job_id=job_id, type="worker_payments_released",
+            content=f"{len(released)} worker pay holds released — ${total:.2f}",
+            metadata={"count": len(released), "total": total},
+        )
+    return {"items": released, "count": len(released), "total": total}
+
+
+@router.get("/jobs/{job_id}/payment-holds")
+async def list_payment_holds_endpoint(job_id: UUID) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    items = await fulfillment.list_worker_payments(job_id)
+    return {"items": items, "count": len(items)}
+
+
+@router.post("/jobs/{job_id}/proofs")
+async def post_proof_endpoint(job_id: UUID, payload: ProofPostRequest) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    proof = await fulfillment.record_proof(
+        job_id,
+        proof_type=payload.type,
+        detail=payload.detail,
+        contractor_id=payload.contractor_id,
+        content_url=payload.content_url,
+        status=payload.status,
+    )
+    await repo.create_event(
+        job_id=job_id, type="proof_received",
+        content=f"Proof received ({payload.type})",
+        metadata={"proof_id": proof["id"]},
+    )
+    return {"proof": proof}
+
+
+@router.get("/jobs/{job_id}/proofs")
+async def list_proofs_endpoint(job_id: UUID) -> dict[str, Any]:
+    await _job_or_404(job_id)
+    items = await fulfillment.list_proofs(job_id)
+    return {"items": items, "count": len(items)}
