@@ -22,6 +22,8 @@ STORE_KEYS = [
     "notifications",
     "conversations",
     "messages",
+    "chat_threads",
+    "chat_messages",
     "calls",
 ]
 USE_LOCAL_WORKFLOW_STORE = True
@@ -38,7 +40,7 @@ def _decode_jsonb(value: Any) -> Any:
 
 def _record_to_dict(row: Any) -> dict[str, Any]:
     data = dict(row)
-    for key in ("imported_fields", "browser_action_log", "transcript"):
+    for key in ("imported_fields", "browser_action_log", "transcript", "payload", "attachments"):
         if key in data:
             data[key] = _decode_jsonb(data[key])
     for key, value in list(data.items()):
@@ -459,6 +461,161 @@ async def list_messages(conversation_id: UUID, limit: int = 500) -> list[dict[st
     async with db.pool().acquire() as conn:
         rows = await conn.fetch(sql, conversation_id, limit)
     return [dict(r) for r in rows]
+
+
+async def create_chat_thread(*, title: str, summary: str | None = None) -> dict[str, Any]:
+    if not db.available():
+        store = _load_browser_store()
+        now = _now_iso()
+        thread = {
+            "id": str(uuid4()),
+            "title": title,
+            "summary": summary,
+            "status": "active",
+            "created_at": now,
+            "updated_at": now,
+        }
+        store["chat_threads"].append(thread)
+        _save_browser_store(store)
+        return thread
+
+    sql = """
+        INSERT INTO chat_threads (title, summary)
+        VALUES ($1, $2)
+        RETURNING id, title, summary, status, created_at, updated_at
+    """
+    async with db.pool().acquire() as conn:
+        row = await conn.fetchrow(sql, title, summary)
+    return dict(row)
+
+
+async def get_chat_thread(thread_id: UUID | str) -> dict[str, Any] | None:
+    wanted = str(thread_id)
+    if not db.available():
+        store = _load_browser_store()
+        return next((item for item in store["chat_threads"] if item["id"] == wanted), None)
+
+    sql = """
+        SELECT id, title, summary, status, created_at, updated_at
+        FROM chat_threads
+        WHERE id = $1
+    """
+    async with db.pool().acquire() as conn:
+        row = await conn.fetchrow(sql, UUID(wanted))
+    return dict(row) if row else None
+
+
+async def list_chat_threads(limit: int = 50) -> list[dict[str, Any]]:
+    if not db.available():
+        store = _load_browser_store()
+        messages = store["chat_messages"]
+        rows = []
+        for thread in sorted(store["chat_threads"], key=lambda item: item.get("updated_at") or "", reverse=True)[:limit]:
+            thread_messages = [m for m in messages if m["thread_id"] == thread["id"]]
+            last = thread_messages[-1] if thread_messages else {}
+            rows.append(
+                {
+                    **thread,
+                    "message_count": len(thread_messages),
+                    "last_message": last.get("body"),
+                    "last_role": last.get("role"),
+                }
+            )
+        return rows
+
+    sql = """
+        SELECT t.id, t.title, t.summary, t.status, t.created_at, t.updated_at,
+          (SELECT count(*) FROM chat_messages m WHERE m.thread_id = t.id) AS message_count,
+          (SELECT body FROM chat_messages m WHERE m.thread_id = t.id
+            ORDER BY m.created_at DESC LIMIT 1) AS last_message,
+          (SELECT role FROM chat_messages m WHERE m.thread_id = t.id
+            ORDER BY m.created_at DESC LIMIT 1) AS last_role
+        FROM chat_threads t
+        ORDER BY t.updated_at DESC, t.created_at DESC
+        LIMIT $1
+    """
+    async with db.pool().acquire() as conn:
+        rows = await conn.fetch(sql, limit)
+    return [dict(r) for r in rows]
+
+
+async def list_chat_messages(thread_id: UUID | str, limit: int = 500) -> list[dict[str, Any]]:
+    wanted = str(thread_id)
+    if not db.available():
+        store = _load_browser_store()
+        return [
+            _record_to_dict(item)
+            for item in store["chat_messages"]
+            if item["thread_id"] == wanted
+        ][:limit]
+
+    sql = """
+        SELECT id, thread_id, role, body, payload, attachments, created_at
+        FROM chat_messages
+        WHERE thread_id = $1
+        ORDER BY created_at ASC
+        LIMIT $2
+    """
+    async with db.pool().acquire() as conn:
+        rows = await conn.fetch(sql, UUID(wanted), limit)
+    return [_record_to_dict(r) for r in rows]
+
+
+async def append_chat_message(
+    *,
+    thread_id: UUID | str,
+    role: str,
+    body: str,
+    payload: dict[str, Any] | None = None,
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    wanted = str(thread_id)
+    payload = payload or {}
+    attachments = attachments or []
+    if not db.available():
+        store = _load_browser_store()
+        message = {
+            "id": str(uuid4()),
+            "thread_id": wanted,
+            "role": role,
+            "body": body,
+            "payload": payload,
+            "attachments": attachments,
+            "created_at": _now_iso(),
+        }
+        store["chat_messages"].append(message)
+        for thread in store["chat_threads"]:
+            if thread["id"] == wanted:
+                thread["updated_at"] = message["created_at"]
+                if not thread.get("summary"):
+                    thread["summary"] = body[:140]
+                break
+        _save_browser_store(store)
+        return message
+
+    sql = """
+        INSERT INTO chat_messages (thread_id, role, body, payload, attachments)
+        VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)
+        RETURNING id, thread_id, role, body, payload, attachments, created_at
+    """
+    update_thread = """
+        UPDATE chat_threads
+        SET updated_at = now(),
+            summary = COALESCE(summary, NULLIF($2, ''))
+        WHERE id = $1
+    """
+    async with db.pool().acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                sql,
+                UUID(wanted),
+                role,
+                body,
+                json.dumps(payload),
+                json.dumps(attachments),
+            )
+            await conn.execute(update_thread, UUID(wanted), body[:140])
+    return _record_to_dict(row)
 
 
 async def list_calls(limit: int = 100) -> list[dict[str, Any]]:

@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     sponge_mcp_url: str = "https://api.wallet.paysponge.com/mcp"
     stripe_api_key: str | None = None
 
+    supermemory_api_key: str | None = None
+    supermemory_base_url: str = "https://api.supermemory.ai"
+    supermemory_container_tag: str = "crewloop:owner:ayush"
+
     database_url: str = (
         "postgres://admin:i87RfJUBx5HZJuykZt4v9u3zaq10wAqV@localhost:5433/crewloop?sslmode=disable"
     )

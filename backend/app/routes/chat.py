@@ -1,10 +1,13 @@
+import asyncio
 import logging
+from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import ai, bulk_outreach, db, event_plan, invoice_email
+from .. import ai, bulk_outreach, db, event_plan, invoice_email, repo, supermemory_client
 
 
 logger = logging.getLogger("crewloop.chat")
@@ -25,6 +28,7 @@ class Attachment(BaseModel):
 class ChatRequest(BaseModel):
     turns: list[Turn] = Field(..., min_length=1)
     attachments: list[Attachment] = Field(default_factory=list)
+    thread_id: UUID | None = None
     structured: bool = Field(
         default=True,
         description="When true (default) the response carries event_draft + action_chips + shortlist.",
@@ -151,6 +155,7 @@ class ShortlistEntry(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    thread_id: UUID | None = None
     reply: str
     intent: str | None = None
     event_draft: EventDraft | None = None
@@ -159,6 +164,38 @@ class ChatResponse(BaseModel):
     invoice_email: InvoiceEmailSnapshot | None = None
     action_chips: list[ActionChip] = Field(default_factory=list)
     shortlist: list[ShortlistEntry] = Field(default_factory=list)
+
+
+class CreateChatThreadRequest(BaseModel):
+    title: str | None = None
+    initial_message: str | None = Field(default=None, max_length=5000)
+
+
+class ChatThreadRecord(BaseModel):
+    id: UUID
+    title: str
+    summary: str | None = None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+    last_message: str | None = None
+    last_role: str | None = None
+
+
+class ChatMessageRecord(BaseModel):
+    id: UUID
+    thread_id: UUID
+    role: str
+    body: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime
+
+
+class ChatThreadDetail(BaseModel):
+    thread: ChatThreadRecord
+    messages: list[ChatMessageRecord] = Field(default_factory=list)
 
 
 # ----- helpers ---------------------------------------------------------------
@@ -225,10 +262,100 @@ def _resolve_shortlist(names: list[str], lookup: dict[str, dict[str, Any]]) -> l
     return out
 
 
+def _thread_title_from_text(text: str) -> str:
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return "New operation"
+    lowered = cleaned.lower()
+    if "corporate dinner" in lowered:
+        return "Corporate dinner"
+    if "bartender" in lowered:
+        return "Bartender shift"
+    if "invoice" in lowered:
+        return "Invoice follow-up"
+    if "inventory" in lowered or "supplies" in lowered:
+        return "Inventory run"
+    return cleaned[:54] + ("…" if len(cleaned) > 54 else "")
+
+
+def _latest_user_turn(payload: ChatRequest) -> Turn | None:
+    for turn in reversed(payload.turns):
+        if turn.role == "user" and turn.text.strip():
+            return turn
+    return None
+
+
+def _assistant_body(response: ChatResponse) -> str:
+    if response.event_plan:
+        return response.reply or f"Event plan ready: {response.event_plan.event_name}"
+    if response.bulk_outreach:
+        return response.reply or response.bulk_outreach.summary
+    if response.invoice_email:
+        return response.reply or response.invoice_email.summary
+    return response.reply
+
+
+async def _chat_thread_detail(thread_id: UUID | str) -> ChatThreadDetail:
+    thread = await repo.get_chat_thread(thread_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="chat thread not found")
+    messages = await repo.list_chat_messages(thread_id)
+    enriched_thread = {
+        **thread,
+        "message_count": len(messages),
+        "last_message": messages[-1]["body"] if messages else None,
+        "last_role": messages[-1]["role"] if messages else None,
+    }
+    return ChatThreadDetail(thread=enriched_thread, messages=messages)
+
+
+async def _append_user_turn(thread_id: UUID, payload: ChatRequest) -> None:
+    latest = _latest_user_turn(payload)
+    if not latest:
+        return
+    await repo.append_chat_message(
+        thread_id=thread_id,
+        role="user",
+        body=latest.text.strip(),
+        attachments=[a.model_dump() for a in payload.attachments],
+    )
+
+
+async def _append_assistant_response(thread_id: UUID, response: ChatResponse) -> None:
+    await repo.append_chat_message(
+        thread_id=thread_id,
+        role="agent",
+        body=_assistant_body(response),
+        payload=response.model_dump(mode="json", exclude_none=True),
+    )
+
+
+async def _sync_supermemory_thread(thread_id: UUID | str) -> None:
+    if not supermemory_client.enabled():
+        return
+    thread = await repo.get_chat_thread(thread_id)
+    if not thread:
+        return
+    messages = await repo.list_chat_messages(thread_id)
+    await supermemory_client.ingest_chat_thread(
+        thread_id=str(thread_id),
+        title=str(thread.get("title") or "CrewLoop chat"),
+        messages=messages,
+    )
+
+
+def _schedule_supermemory_sync(thread_id: UUID | str) -> None:
+    if not supermemory_client.enabled():
+        return
+    try:
+        asyncio.create_task(_sync_supermemory_thread(thread_id))
+    except RuntimeError:
+        logger.warning("Could not schedule Supermemory sync for thread %s", thread_id)
+
+
 # ----- route -----------------------------------------------------------------
 
-@router.post("", response_model=ChatResponse)
-async def chat_with_loop(payload: ChatRequest) -> ChatResponse:
+async def _generate_chat_response(payload: ChatRequest) -> ChatResponse:
     turns = [{"role": "user" if t.role != "model" else "model", "text": t.text} for t in payload.turns]
     attachments = [a.model_dump() for a in payload.attachments]
 
@@ -254,6 +381,23 @@ async def chat_with_loop(payload: ChatRequest) -> ChatResponse:
             action_chips=[
                 ActionChip(label="Shortlist crew", say="Shortlist the best crew for this event"),
                 ActionChip(label="Edit plan", say="I want to edit the event plan first"),
+            ],
+        )
+
+    inferred_plan = event_plan.infer_event_plan(latest_text)
+    if inferred_plan:
+        plan = EventPlan(**inferred_plan)
+        return ChatResponse(
+            reply=(
+                "Here’s the concise event plan I inferred. If this looks right, approve it "
+                "and I’ll move to crew shortlisting."
+            ),
+            intent="event_plan",
+            event_plan=plan,
+            action_chips=[
+                ActionChip(label="Approve plan", say="Approve this event plan"),
+                ActionChip(label="Edit staff", say="Change the staff requirement"),
+                ActionChip(label="Change budget", say="Change the invoice amount"),
             ],
         )
 
@@ -317,23 +461,6 @@ async def chat_with_loop(payload: ChatRequest) -> ChatResponse:
             ],
         )
 
-    inferred_plan = event_plan.infer_event_plan(latest_text)
-    if inferred_plan:
-        plan = EventPlan(**inferred_plan)
-        return ChatResponse(
-            reply=(
-                "Here’s the concise event plan I inferred. If this looks right, approve it "
-                "and I’ll move to crew shortlisting."
-            ),
-            intent="event_plan",
-            event_plan=plan,
-            action_chips=[
-                ActionChip(label="Approve plan", say="Approve this event plan"),
-                ActionChip(label="Edit staff", say="Change the staff requirement"),
-                ActionChip(label="Change budget", say="Change the invoice amount"),
-            ],
-        )
-
     contractor_names, lookup = await _fetch_contractor_names_and_lookup()
     open_events = await _fetch_open_events()
 
@@ -368,3 +495,49 @@ async def chat_with_loop(payload: ChatRequest) -> ChatResponse:
         action_chips=chips,
         shortlist=shortlist,
     )
+
+
+@router.get("/threads", response_model=dict[str, list[ChatThreadRecord]])
+async def list_chat_threads(limit: int = 50) -> dict[str, list[ChatThreadRecord]]:
+    return {"items": await repo.list_chat_threads(limit=limit)}
+
+
+@router.post("/threads", response_model=ChatThreadDetail)
+async def create_chat_thread(payload: CreateChatThreadRequest) -> ChatThreadDetail:
+    initial_message = (payload.initial_message or "").strip()
+    title = (payload.title or "").strip() or _thread_title_from_text(initial_message)
+    thread = await repo.create_chat_thread(title=title, summary=initial_message[:140] or None)
+
+    if initial_message:
+        thread_id = thread["id"]
+        await repo.append_chat_message(thread_id=thread_id, role="user", body=initial_message)
+        response = await _generate_chat_response(
+            ChatRequest(turns=[Turn(role="user", text=initial_message)], thread_id=thread_id)
+        )
+        response.thread_id = thread_id
+        await _append_assistant_response(thread_id, response)
+        _schedule_supermemory_sync(thread_id)
+
+    return await _chat_thread_detail(thread["id"])
+
+
+@router.get("/threads/{thread_id}", response_model=ChatThreadDetail)
+async def get_chat_thread(thread_id: UUID) -> ChatThreadDetail:
+    return await _chat_thread_detail(thread_id)
+
+
+@router.post("", response_model=ChatResponse)
+async def chat_with_loop(payload: ChatRequest) -> ChatResponse:
+    if payload.thread_id:
+        if not await repo.get_chat_thread(payload.thread_id):
+            raise HTTPException(status_code=404, detail="chat thread not found")
+        await _append_user_turn(payload.thread_id, payload)
+
+    response = await _generate_chat_response(payload)
+
+    if payload.thread_id:
+        response.thread_id = payload.thread_id
+        await _append_assistant_response(payload.thread_id, response)
+        _schedule_supermemory_sync(payload.thread_id)
+
+    return response
