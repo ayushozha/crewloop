@@ -1,10 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/Brand";
-import { api, type ChatBulkOutreach, type ChatEventPlan, type ChatInvoiceEmail } from "@/lib/api";
+import {
+  API_BASE_URL,
+  api,
+  type ChatBulkOutreach,
+  type ChatEventPlan,
+  type ChatInvoiceEmail,
+  type ChatResponse,
+  type ChatSchedule,
+  type ChatStoredMessage,
+  type ChatSupplies,
+  type ChatThread,
+  type EventListItem,
+} from "@/lib/api";
+import type { Contractor } from "@/lib/types";
 
 /* ============================== types =============================== */
 
@@ -20,6 +34,7 @@ interface Attachment {
 interface ChatMessage {
   id: string;
   role: Role;
+  intent?: string;
   text?: string;
   attachments?: Attachment[];
   ts: string; // formatted time
@@ -37,6 +52,14 @@ type AgentCard =
       kind: "bulk_outreach";
       actions: Array<{ label: string; say: string; variant?: "primary" | "ghost" }>;
     } & ChatBulkOutreach)
+  | ({
+      kind: "schedule";
+      actions: Array<{ label: string; say: string; variant?: "primary" | "ghost" }>;
+    } & ChatSchedule)
+  | ({
+      kind: "supplies";
+      actions: Array<{ label: string; say: string; variant?: "primary" | "ghost" }>;
+    } & ChatSupplies)
   | ({
       kind: "invoice_email";
       actions: Array<{ label: string; say: string; variant?: "primary" | "ghost" }>;
@@ -72,48 +95,6 @@ type AgentCard =
       actions: Array<{ label: string; say?: string; variant?: "primary" | "ghost" }>;
     };
 
-/* ============================== seed thread =============================== */
-
-const SEED_MESSAGES: ChatMessage[] = [
-  {
-    id: "u-1",
-    role: "user",
-    text: "We have a corporate dinner this Saturday for 80 guests in SoMa. Need a 10-person crew, supplies, and an invoice.",
-    ts: "5:42 PM",
-  },
-  {
-    id: "a-1",
-    role: "agent",
-    ts: "5:42 PM",
-    card: {
-      kind: "event_plan",
-      event_name: "Corporate dinner",
-      details: "80-guest corporate dinner in SoMa, San Francisco.",
-      event_date: "This Saturday",
-      event_time: "6:00 PM - 11:00 PM",
-      location: "SoMa, San Francisco",
-      staff_requirement: "10 staff: 2 bartenders, 4 servers, 2 setup crew, 1 event lead, 1 cleanup lead.",
-      responsibilities: "Setup, food service, bartending, cleanup, and event lead oversight.",
-      inventory_requirement: "100 compostable cups, 100 napkins, 4 bags of ice, 2 tablecloths, bartender tool kit rental.",
-      estimated_labor: "$1,450",
-      invoice_amount: "$1,756",
-      approval_question: "Approve this plan so I can shortlist the crew and start the next steps?",
-      actions: [
-        { label: "Approve plan", say: "Approve this event plan", variant: "primary" },
-        { label: "Edit staff", say: "Change the staff requirement", variant: "ghost" },
-        { label: "Change budget", say: "Change the invoice amount", variant: "ghost" },
-      ],
-    },
-  },
-];
-
-const THREADS = [
-  { id: "corp-dinner", title: "Corporate dinner", sub: "Plan ready · approval needed", time: "now", badge: "1", active: true },
-  { id: "fri-catering", title: "Friday catering", sub: "Crew shortlist drafted", time: "2h" },
-  { id: "vendor-order", title: "Vendor supplies", sub: "Browser Use found pickup", time: "Mon" },
-  { id: "roster", title: "Roster memory", sub: "Reliability scores refreshed", time: "May 9" },
-];
-
 /* ============================== utils =============================== */
 
 const nowStr = () => {
@@ -124,6 +105,109 @@ const nowStr = () => {
   h = ((h + 11) % 12) + 1;
   return `${h}:${m} ${ampm}`;
 };
+
+const timeFromIso = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return nowStr();
+  let h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, "0");
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = ((h + 11) % 12) + 1;
+  return `${h}:${m} ${ampm}`;
+};
+
+const threadAge = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "now";
+  const minutes = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60 * 24) return `${Math.round(minutes / 60)}h`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+};
+
+const eventKey = (name: string) => name.trim().toLowerCase();
+
+type EventPlanCard = Extract<AgentCard, { kind: "event_plan" }>;
+
+const eventPlanCardKey = (card: EventPlanCard) => card.source_event_id || eventKey(card.event_name);
+
+const isEventPlanApprovedMessage = (message: ChatMessage) =>
+  message.role === "agent" &&
+  (message.intent === "event_plan_approved" || /^Approved\./i.test(message.text ?? ""));
+
+const isShortlistRequestText = (text?: string) => {
+  const lower = (text ?? "").toLowerCase();
+  return lower.includes("shortlist") && (lower.includes("crew") || lower.includes("contractor") || lower.includes("event"));
+};
+
+const isScheduleRequestText = (text?: string) => {
+  const lower = (text ?? "").toLowerCase();
+  return lower.includes("schedule") && (lower.includes("create") || lower.includes("set") || lower.includes("finalized") || lower.includes("roster"));
+};
+
+function fallbackShortlistSnapshot(): ChatBulkOutreach {
+  return {
+    title: "Shortlisted crew",
+    tag: "10 ranked",
+    status: "ready",
+    summary: "10-person event crew ready for approval before outreach.",
+    counts: {
+      needed: 10,
+      filled: 0,
+      live_texts: 3,
+      live_calls: 1,
+      simulated_replies: 8,
+      declined: 0,
+    },
+    rows: [
+      { name: "Emma Carter", role: "Event lead", channel: "iMessage + AgentPhone call", phone_last4: "9008", status: "ready", response: "Waiting to contact.", live: true, delivery_status: "ready" },
+      { name: "Madison Reed", role: "Bartender", channel: "iMessage", phone_last4: "0513", status: "ready", response: "Waiting to contact.", live: true, delivery_status: "ready" },
+      { name: "Ashley Brooks", role: "Server", channel: "iMessage", phone_last4: "9702", status: "ready", response: "Waiting to contact.", live: true, delivery_status: "ready" },
+      { name: "Olivia Parker", role: "Bartender", channel: "Simulated reply", phone_last4: "", status: "queued", response: "YES - can cover bar two.", live: false, delivery_status: "simulated" },
+      { name: "Claire Walsh", role: "Server", channel: "Simulated reply", phone_last4: "", status: "queued", response: "Confirmed for service.", live: false, delivery_status: "simulated" },
+      { name: "Harper Lane", role: "Server", channel: "Simulated reply", phone_last4: "", status: "queued", response: "Yes, available 6-11 PM.", live: false, delivery_status: "simulated" },
+      { name: "Brooke Miller", role: "Server", channel: "Simulated reply", phone_last4: "", status: "queued", response: "Confirmed.", live: false, delivery_status: "simulated" },
+      { name: "Luis Romero", role: "Setup crew", channel: "Simulated reply", phone_last4: "", status: "queued", response: "Can handle load-in and setup.", live: false, delivery_status: "simulated" },
+      { name: "Noah Bennett", role: "Setup crew", channel: "Simulated reply", phone_last4: "", status: "queued", response: "Sorry, I am booked.", live: false, delivery_status: "simulated" },
+      { name: "Natalie Cole", role: "Cleanup lead", channel: "Simulated reply", phone_last4: "", status: "queued", response: "Confirmed for cleanup lead.", live: false, delivery_status: "simulated" },
+    ],
+    evidence: [],
+  };
+}
+
+function fallbackScheduleSnapshot(): ChatSchedule {
+  return {
+    title: "Event schedule",
+    tag: "10-person roster",
+    status: "ready",
+    summary: "Schedule locked for the finalized crew.",
+    event: {
+      date: "This Saturday",
+      time: "6:00 PM – 11:00 PM",
+      location: "SoMa, San Francisco",
+    },
+    rows: [
+      { name: "Luis Romero", role: "Setup crew", call_time: "4:00 PM", shift: "4:00 PM – 6:30 PM", station: "Load-in", pay: "$110", phone_last4: "", live: false },
+      { name: "Taylor Adams", role: "Setup crew", call_time: "4:00 PM", shift: "4:00 PM – 6:30 PM", station: "Load-in", pay: "$110", phone_last4: "", live: false },
+      { name: "Emma Carter", role: "Event lead", call_time: "5:00 PM", shift: "5:00 PM – 11:30 PM", station: "Owner-side", pay: "$175", phone_last4: "9008", live: true },
+      { name: "Madison Reed", role: "Bartender", call_time: "5:30 PM", shift: "5:30 PM – 11:15 PM", station: "Bar 1", pay: "$175", phone_last4: "0513", live: true },
+      { name: "Olivia Parker", role: "Bartender", call_time: "5:30 PM", shift: "5:30 PM – 11:15 PM", station: "Bar 2", pay: "$165", phone_last4: "", live: false },
+      { name: "Ashley Brooks", role: "Server", call_time: "5:45 PM", shift: "5:45 PM – 11:00 PM", station: "Floor", pay: "$125", phone_last4: "9702", live: true },
+      { name: "Claire Walsh", role: "Server", call_time: "5:45 PM", shift: "5:45 PM – 11:00 PM", station: "Floor", pay: "$125", phone_last4: "", live: false },
+      { name: "Harper Lane", role: "Server", call_time: "5:45 PM", shift: "5:45 PM – 11:00 PM", station: "Floor", pay: "$125", phone_last4: "", live: false },
+      { name: "Brooke Miller", role: "Server", call_time: "5:45 PM", shift: "5:45 PM – 11:00 PM", station: "Floor", pay: "$125", phone_last4: "", live: false },
+      { name: "Natalie Cole", role: "Cleanup lead", call_time: "10:00 PM", shift: "10:00 PM – 12:30 AM", station: "Cleanup", pay: "$135", phone_last4: "", live: false },
+    ],
+    totals: {
+      crew: 10,
+      labor: "$1,370",
+      arrive_by: "4:00 PM",
+      live_confirmed: 3,
+    },
+    evidence: [],
+  };
+}
 
 /** Render **bold** segments without dangerouslySetInnerHTML. */
 function richText(text: string) {
@@ -167,6 +251,22 @@ function cardFromBulkOutreach(snapshot: ChatBulkOutreach, actions: Array<{ label
   };
 }
 
+function cardFromSchedule(snapshot: ChatSchedule, actions: Array<{ label: string; say: string }> = []): AgentCard {
+  return {
+    kind: "schedule",
+    ...snapshot,
+    actions: actions.map((action, index) => ({ ...action, variant: index === 0 ? "primary" : "ghost" })),
+  };
+}
+
+function cardFromSupplies(snapshot: ChatSupplies, actions: Array<{ label: string; say: string }> = []): AgentCard {
+  return {
+    kind: "supplies",
+    ...snapshot,
+    actions: actions.map((action, index) => ({ ...action, variant: index === 0 ? "primary" : "ghost" })),
+  };
+}
+
 function cardFromInvoiceEmail(snapshot: ChatInvoiceEmail, actions: Array<{ label: string; say: string }> = []): AgentCard {
   return {
     kind: "invoice_email",
@@ -175,19 +275,261 @@ function cardFromInvoiceEmail(snapshot: ChatInvoiceEmail, actions: Array<{ label
   };
 }
 
+function cardFromChatResponse(response: ChatResponse): AgentCard | undefined {
+  if (response.event_plan) return cardFromEventPlan(response.event_plan, response.action_chips ?? []);
+  if (response.bulk_outreach) return cardFromBulkOutreach(response.bulk_outreach, response.action_chips ?? []);
+  if (response.schedule) return cardFromSchedule(response.schedule, response.action_chips ?? []);
+  if (response.supplies) return cardFromSupplies(response.supplies, response.action_chips ?? []);
+  if (response.invoice_email) return cardFromInvoiceEmail(response.invoice_email, response.action_chips ?? []);
+  return undefined;
+}
+
+function cardTranscript(card: AgentCard): string {
+  if (card.kind === "event_plan") {
+    return [
+      `Event plan: ${card.event_name}`,
+      card.details,
+      card.staff_requirement,
+      card.inventory_requirement,
+      `Invoice: ${card.invoice_amount}`,
+    ].join("\n");
+  }
+  if (card.kind === "bulk_outreach") return `${card.title}\n${card.summary}`;
+  if (card.kind === "schedule") return `${card.title}\n${card.summary}`;
+  if (card.kind === "supplies") return `${card.title}\n${card.summary}`;
+  if (card.kind === "invoice_email") return `${card.title}\n${card.summary}`;
+  if ("title" in card) return card.title;
+  return "";
+}
+
+function messageTranscript(message: ChatMessage): string {
+  if (message.text) return message.text;
+  if (message.card) return cardTranscript(message.card);
+  if (message.attachments?.length) {
+    return `[${message.attachments.length} attachment${message.attachments.length === 1 ? "" : "s"}]`;
+  }
+  return "";
+}
+
+function messageFromStored(stored: ChatStoredMessage): ChatMessage {
+  const payload = stored.payload as ChatResponse | undefined;
+  const card = payload ? cardFromChatResponse(payload) : undefined;
+  const attachments = (stored.attachments ?? []).map((attachment) => ({
+    name: attachment.name || "attachment",
+    mime_type: attachment.mime_type,
+    data: attachment.data,
+    preview_url:
+      attachment.preview_url ||
+      (attachment.mime_type?.startsWith("image/") && attachment.data
+        ? `data:${attachment.mime_type};base64,${attachment.data}`
+        : undefined),
+  }));
+  return {
+    id: stored.id,
+    role: stored.role === "user" ? "user" : "agent",
+    intent: stored.role === "agent" ? payload?.intent ?? undefined : undefined,
+    text: stored.role === "agent" && card ? undefined : stored.body,
+    attachments: attachments.length ? attachments : undefined,
+    ts: timeFromIso(stored.created_at),
+    card,
+    suggestions: stored.role === "agent" && !card ? payload?.action_chips : undefined,
+  };
+}
+
+function normalizeThreadMessages(threadMessages: ChatMessage[]): ChatMessage[] {
+  let previousUserText = "";
+  return threadMessages.map((message) => {
+    if (message.role === "user") {
+      previousUserText = message.text ?? "";
+      return message;
+    }
+    if (message.card?.kind === "event_plan" && isShortlistRequestText(previousUserText)) {
+      return {
+        ...message,
+        intent: "bulk_outreach_ready",
+        text: undefined,
+        suggestions: undefined,
+        card: cardFromBulkOutreach(fallbackShortlistSnapshot(), [
+          { label: "Start outreach", say: "Start bulk outreach now" },
+          { label: "Edit roster", say: "Edit the contractor roster before outreach" },
+        ]),
+      };
+    }
+    if (message.card?.kind === "event_plan" && isScheduleRequestText(previousUserText)) {
+      return {
+        ...message,
+        intent: "schedule_ready",
+        text: undefined,
+        suggestions: undefined,
+        card: cardFromSchedule(fallbackScheduleSnapshot(), [
+          { label: "Recommend supplies", say: "Recommend the supplies list for this event" },
+          { label: "Prepare invoice", say: "Prepare the client invoice next" },
+        ]),
+      };
+    }
+    return message;
+  });
+}
+
 /* ============================== component =============================== */
 
 export function ChatClient() {
-  const [messages, setMessages] = useState<ChatMessage[]>(SEED_MESSAGES);
+  const router = useRouter();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [eventRecords, setEventRecords] = useState<Record<string, EventListItem>>({});
+  const [eventRecordFallbacks, setEventRecordFallbacks] = useState<Record<string, EventListItem>>({});
+  const [contractorsByName, setContractorsByName] = useState<Record<string, Contractor>>({});
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<Attachment[]>([]);
   const [sending, setSending] = useState(false);
+  const [loadingThread, setLoadingThread] = useState(false);
   const [inCall, setInCall] = useState(false);
   const [callTime, setCallTime] = useState("00:02");
   const streamRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshThreads = useCallback(async () => {
+    const { items } = await api.listChatThreads();
+    setThreads(items);
+  }, []);
+
+  const loadThread = useCallback(async (threadId: string) => {
+    setLoadingThread(true);
+    try {
+      const detail = await api.getChatThread(threadId);
+      setActiveThreadId(detail.thread.id);
+      setMessages(normalizeThreadMessages(detail.messages.map(messageFromStored)));
+      setThreads((prev) => {
+        const rest = prev.filter((thread) => thread.id !== detail.thread.id);
+        return [detail.thread, ...rest];
+      });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : "Could not load this thread";
+      setMessages([{ id: `err-${Date.now()}`, role: "agent", text: `Loop hit a snag: ${detail.slice(0, 200)}`, ts: nowStr() }]);
+    } finally {
+      setLoadingThread(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void refreshThreads();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [refreshThreads]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      const threadId = new URLSearchParams(window.location.search).get("thread");
+      if (threadId) {
+        void loadThread(threadId);
+      } else {
+        setActiveThreadId(null);
+        setMessages([]);
+      }
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [loadThread]);
+
+  useEffect(() => {
+    const ids = Array.from(
+      new Set(
+        messages
+          .map((message) => message.card?.kind === "event_plan" ? message.card.source_event_id : null)
+          .filter((id): id is string => Boolean(id && !eventRecords[id])),
+      ),
+    );
+    if (ids.length === 0) return;
+    let cancelled = false;
+    const id = window.setTimeout(() => {
+      void Promise.all(
+        ids.map(async (eventId) => {
+          try {
+            const event = await api.getEvent(eventId);
+            if (!cancelled) {
+              setEventRecords((prev) => ({ ...prev, [eventId]: event }));
+            }
+          } catch {
+            /* Leave card on the plan payload if the event record cannot load. */
+          }
+        }),
+      );
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [eventRecords, messages]);
+
+  useEffect(() => {
+    const missingNames = Array.from(
+      new Set(
+        messages
+          .map((message) => message.card?.kind === "event_plan" && !message.card.source_event_id ? message.card.event_name : null)
+          .filter((name): name is string => Boolean(name && !eventRecordFallbacks[eventKey(name)])),
+      ),
+    );
+    if (missingNames.length === 0) return;
+    let cancelled = false;
+    const id = window.setTimeout(() => {
+      void api.listEvents().then(({ items }) => {
+        if (cancelled) return;
+        setEventRecordFallbacks((prev) => {
+          const next = { ...prev };
+          for (const name of missingNames) {
+            const key = eventKey(name);
+            const match = items.find((event) => eventKey(event.role) === key) ?? items.find((event) => eventKey(event.role).includes(key));
+            if (match) next[key] = match;
+          }
+          return next;
+        });
+      }).catch(() => {
+        /* Old transcripts can still render from the stored plan payload. */
+      });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [eventRecordFallbacks, messages]);
+
+  useEffect(() => {
+    const needsContractors = messages.some((message) => message.card?.kind === "bulk_outreach");
+    if (!needsContractors || Object.keys(contractorsByName).length > 0) return;
+    let cancelled = false;
+    const id = window.setTimeout(() => {
+      void api.listContractors({ limit: 200 }).then(({ items }) => {
+        if (cancelled) return;
+        setContractorsByName(
+          Object.fromEntries(items.map((contractor) => [eventKey(contractor.name), contractor])),
+        );
+      }).catch(() => {
+        /* Shortlist still renders from the outreach payload if roster hydration fails. */
+      });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
+  }, [contractorsByName, messages]);
+
+  const approvedPlanKeys = useMemo(() => {
+    const approved = new Set<string>();
+    let latestPlanKey: string | null = null;
+    for (const message of messages) {
+      if (message.card?.kind === "event_plan") {
+        latestPlanKey = eventPlanCardKey(message.card);
+      }
+      if (latestPlanKey && isEventPlanApprovedMessage(message)) {
+        approved.add(latestPlanKey);
+      }
+    }
+    return approved;
+  }, [messages]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -240,22 +582,34 @@ export function ChatClient() {
 
     try {
       const turns = optimistic
-        .filter((m) => m.text || (m.attachments && m.attachments.length))
         .map((m) => ({
           role: m.role === "user" ? ("user" as const) : ("model" as const),
-          text: m.text ?? (m.attachments?.length ? `[${m.attachments.length} attachment${m.attachments.length === 1 ? "" : "s"}]` : ""),
+          text: messageTranscript(m),
+        }))
+        .filter((m) => m.text)
+        .map((m) => ({
+          role: m.role,
+          text: m.text,
         }));
       const apiAttachments = attachments
-        .filter((a) => a.data) // real uploads only; demo seed images have empty data
-        .map((a) => ({ mime_type: a.mime_type, data: a.data, name: a.name }));
-      const response = await api.chat({ turns, attachments: apiAttachments });
-      const card = response.event_plan
-        ? cardFromEventPlan(response.event_plan, response.action_chips ?? [])
-        : response.bulk_outreach
-          ? cardFromBulkOutreach(response.bulk_outreach, response.action_chips ?? [])
-          : response.invoice_email
-            ? cardFromInvoiceEmail(response.invoice_email, response.action_chips ?? [])
-            : undefined;
+        .filter((a) => a.data)
+        .map((m) => ({
+          mime_type: m.mime_type,
+          data: m.data,
+          name: m.name,
+        }));
+
+      if (!activeThreadId) {
+        const detail = await api.createChatThread({ initial_message: text });
+        setActiveThreadId(detail.thread.id);
+        setMessages(normalizeThreadMessages(detail.messages.map(messageFromStored)));
+        setThreads((prev) => [detail.thread, ...prev.filter((thread) => thread.id !== detail.thread.id)]);
+        router.replace(`/chat?thread=${encodeURIComponent(detail.thread.id)}`);
+        return;
+      }
+
+      const response = await api.chat({ turns, attachments: apiAttachments, thread_id: activeThreadId });
+      const card = cardFromChatResponse(response);
       setMessages((prev) => [
         ...prev,
         {
@@ -263,10 +617,12 @@ export function ChatClient() {
           role: "agent",
           text: card ? undefined : response.reply,
           card,
+          intent: response.intent ?? undefined,
           suggestions: card ? undefined : response.action_chips,
           ts: nowStr(),
         },
       ]);
+      void refreshThreads();
     } catch (e) {
       const detail = e instanceof Error ? e.message : "Loop is offline";
       setMessages((prev) => [
@@ -276,7 +632,7 @@ export function ChatClient() {
     } finally {
       setSending(false);
     }
-  }, [messages, sending]);
+  }, [activeThreadId, messages, refreshThreads, router, sending]);
 
   const send = useCallback(async () => {
     await submitMessage(draft, pending);
@@ -309,10 +665,23 @@ export function ChatClient() {
   };
 
   return (
-    <div className="grid h-screen grid-cols-1 overflow-hidden md:grid-cols-[240px_1fr] xl:grid-cols-[240px_1fr_360px]">
-      <Sidebar />
+    <div className="grid h-screen min-h-0 grid-cols-1 overflow-hidden md:grid-cols-[240px_1fr] xl:grid-cols-[240px_1fr_360px]">
+      <Sidebar
+        threads={threads}
+        activeThreadId={activeThreadId}
+        onNewThread={() => {
+          setActiveThreadId(null);
+          setMessages([]);
+          router.push("/chat");
+        }}
+        onThreadSelect={(threadId) => {
+          router.push(`/chat?thread=${encodeURIComponent(threadId)}`);
+          void loadThread(threadId);
+        }}
+      />
       <ChatColumn
         messages={messages}
+        loadingThread={loadingThread}
         draft={draft}
         setDraft={setDraft}
         pending={pending}
@@ -329,6 +698,10 @@ export function ChatClient() {
         setInCall={setInCall}
         callTime={callTime}
         onCardAction={sendCardAction}
+        eventRecords={eventRecords}
+        eventRecordFallbacks={eventRecordFallbacks}
+        contractorsByName={contractorsByName}
+        approvedPlanKeys={approvedPlanKeys}
       />
       <ContextPanel />
     </div>
@@ -337,7 +710,17 @@ export function ChatClient() {
 
 /* ============================== sidebar =============================== */
 
-function Sidebar() {
+function Sidebar({
+  threads,
+  activeThreadId,
+  onNewThread,
+  onThreadSelect,
+}: {
+  threads: ChatThread[];
+  activeThreadId: string | null;
+  onNewThread: () => void;
+  onThreadSelect: (threadId: string) => void;
+}) {
   return (
     <aside className="hidden flex-col gap-5 overflow-y-auto border-r border-line p-6 md:flex">
       <Link href="/" className="flex items-center gap-2.5">
@@ -362,22 +745,36 @@ function Sidebar() {
       <div className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between px-2.5 pb-1.5">
           <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-muted">Threads</span>
-          <button className="grid h-6 w-6 place-items-center rounded-md text-ink-2 hover:bg-[#F1EEE5] hover:text-ink">
+          <button
+            type="button"
+            onClick={onNewThread}
+            className="grid h-6 w-6 place-items-center rounded-md text-ink-2 hover:bg-[#F1EEE5] hover:text-ink"
+            aria-label="Start a new chat thread"
+          >
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
               <path d="M6.5 2.5v8M2.5 6.5h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
           </button>
         </div>
-        {THREADS.map((t) => (
+        {threads.length === 0 ? (
+          <div className="rounded-lg px-2.5 py-3 text-[12.5px] leading-snug text-muted">
+            New operations will appear here after you send the first message.
+          </div>
+        ) : threads.map((t) => {
+          const active = t.id === activeThreadId;
+          const preview = t.summary || t.last_message || "Thread saved";
+          return (
           <button
             key={t.id}
+            type="button"
+            onClick={() => onThreadSelect(t.id)}
             className={`grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-lg p-2 text-left transition ${
-              t.active ? "bg-ink text-panel" : "text-ink hover:bg-[#F1EEE5]"
+              active ? "bg-ink text-panel" : "text-ink hover:bg-[#F1EEE5]"
             }`}
           >
             <span
               className={`grid h-7 w-7 place-items-center rounded-lg text-[11px] font-semibold ${
-                t.active ? "bg-panel text-ink" : "bg-ink text-panel"
+                active ? "bg-panel text-ink" : "bg-ink text-panel"
               }`}
             >
               L
@@ -385,17 +782,18 @@ function Sidebar() {
             <span className="min-w-0">
               <span className="flex items-center gap-1.5 text-[13px] font-medium">
                 <span className="truncate">{t.title}</span>
-                {t.badge && (
-                  <span className="rounded-full bg-urgent px-1.5 py-0 font-mono text-[10px] text-panel">{t.badge}</span>
-                )}
+                {t.message_count ? (
+                  <span className="rounded-full bg-urgent px-1.5 py-0 font-mono text-[10px] text-panel">{t.message_count}</span>
+                ) : null}
               </span>
-              <span className={`block max-w-[130px] truncate text-[11.5px] ${t.active ? "text-[#C9C5B6]" : "text-muted"}`}>
-                {t.sub}
+              <span className={`block max-w-[130px] truncate text-[11.5px] ${active ? "text-[#C9C5B6]" : "text-muted"}`}>
+                {preview}
               </span>
             </span>
-            <span className={`font-mono text-[10.5px] ${t.active ? "text-[#C9C5B6]" : "text-muted"}`}>{t.time}</span>
+            <span className={`font-mono text-[10.5px] ${active ? "text-[#C9C5B6]" : "text-muted"}`}>{threadAge(t.updated_at)}</span>
           </button>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-auto flex items-center gap-2.5 rounded-[10px] border border-line bg-panel p-2.5">
@@ -448,6 +846,7 @@ function SideLink({
 
 interface ChatColumnProps {
   messages: ChatMessage[];
+  loadingThread: boolean;
   draft: string;
   setDraft: (v: string) => void;
   pending: Attachment[];
@@ -464,10 +863,15 @@ interface ChatColumnProps {
   setInCall: (b: boolean) => void;
   callTime: string;
   onCardAction: (s: string) => void;
+  eventRecords: Record<string, EventListItem>;
+  eventRecordFallbacks: Record<string, EventListItem>;
+  contractorsByName: Record<string, Contractor>;
+  approvedPlanKeys: Set<string>;
 }
 
 function ChatColumn({
   messages,
+  loadingThread,
   draft,
   setDraft,
   pending,
@@ -484,16 +888,39 @@ function ChatColumn({
   setInCall,
   callTime,
   onCardAction,
+  eventRecords,
+  eventRecordFallbacks,
+  contractorsByName,
+  approvedPlanKeys,
 }: ChatColumnProps) {
   return (
-    <section className="flex min-w-0 flex-col bg-bg">
+    <section className="flex h-screen max-h-screen min-h-0 min-w-0 flex-col overflow-hidden bg-bg">
       <ChatHeader inCall={inCall} setInCall={setInCall} callTime={callTime} />
 
-      <div ref={streamRef} className="flex-1 overflow-y-auto px-5 pb-6 pt-8 md:px-9">
+      <div ref={streamRef} className="h-0 min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 pt-8 md:px-9">
         <div className="mx-auto flex max-w-[780px] flex-col gap-[18px]">
           <Daybreak>Today · 5:42 PM PT</Daybreak>
+          {loadingThread ? (
+            <div className="rounded-2xl border border-line bg-panel px-4 py-3 text-[14px] text-muted">
+              Loading thread…
+            </div>
+          ) : null}
+          {!loadingThread && messages.length === 0 ? (
+            <div className="rounded-2xl border border-line bg-panel px-4 py-3 text-[14px] leading-relaxed text-ink-2">
+              Start a new operation here, or send from the dashboard to create a fresh saved thread.
+            </div>
+          ) : null}
           {messages.map((m) => (
-            <MessageBubble key={m.id} msg={m} onSuggestion={(s) => setDraft(s)} onCardAction={onCardAction} />
+            <MessageBubble
+              key={m.id}
+              msg={m}
+              onSuggestion={(s) => setDraft(s)}
+              onCardAction={onCardAction}
+              eventRecords={eventRecords}
+              eventRecordFallbacks={eventRecordFallbacks}
+              contractorsByName={contractorsByName}
+              approvedPlanKeys={approvedPlanKeys}
+            />
           ))}
           {sending && <TypingIndicator />}
         </div>
@@ -519,7 +946,7 @@ function ChatColumn({
 function ChatHeader({ inCall, setInCall, callTime }: { inCall: boolean; setInCall: (b: boolean) => void; callTime: string }) {
   return (
     <header
-      className="z-[2] flex items-center gap-3.5 border-b border-line px-6 py-3.5 backdrop-blur-md"
+      className="z-[2] flex shrink-0 items-center gap-3.5 border-b border-line px-6 py-3.5 backdrop-blur-md"
       style={{ background: "color-mix(in oklab, var(--color-bg) 85%, transparent)" }}
     >
       <div className="relative grid h-9 w-9 place-items-center rounded-[10px] bg-ink text-panel">
@@ -623,10 +1050,18 @@ function MessageBubble({
   msg,
   onSuggestion,
   onCardAction,
+  eventRecords,
+  eventRecordFallbacks,
+  contractorsByName,
+  approvedPlanKeys,
 }: {
   msg: ChatMessage;
   onSuggestion: (s: string) => void;
   onCardAction: (s: string) => void;
+  eventRecords: Record<string, EventListItem>;
+  eventRecordFallbacks: Record<string, EventListItem>;
+  contractorsByName: Record<string, Contractor>;
+  approvedPlanKeys: Set<string>;
 }) {
   if (msg.suggestions && !msg.text && !msg.card) {
     return (
@@ -663,7 +1098,16 @@ function MessageBubble({
           </div>
         ) : null}
 
-        {msg.card && <Card card={msg.card} onAction={onCardAction} />}
+        {msg.card && (
+          <Card
+            card={msg.card}
+            onAction={onCardAction}
+            eventRecords={eventRecords}
+            eventRecordFallbacks={eventRecordFallbacks}
+            contractorsByName={contractorsByName}
+            approvedPlanKeys={approvedPlanKeys}
+          />
+        )}
 
         {msg.suggestions && msg.suggestions.length > 0 && (
           <SuggestionButtons suggestions={msg.suggestions} onSelect={onCardAction} />
@@ -793,41 +1237,98 @@ function VoiceBubble({ duration, isUser }: { duration: string; isUser: boolean }
 
 /* ============================== cards =============================== */
 
-function Card({ card, onAction }: { card: AgentCard; onAction?: (say: string) => void }) {
+function Card({
+  card,
+  onAction,
+  eventRecords,
+  eventRecordFallbacks,
+  contractorsByName,
+  approvedPlanKeys,
+}: {
+  card: AgentCard;
+  onAction?: (say: string) => void;
+  eventRecords: Record<string, EventListItem>;
+  eventRecordFallbacks: Record<string, EventListItem>;
+  contractorsByName: Record<string, Contractor>;
+  approvedPlanKeys: Set<string>;
+}) {
   if (card.kind === "event_plan") {
+    const event = card.source_event_id ? eventRecords[card.source_event_id] : eventRecordFallbacks[eventKey(card.event_name)];
+    const eventSourceId = card.source_event_id || event?.id;
+    const isApproved = approvedPlanKeys.has(eventPlanCardKey(card)) || event?.status === "approved";
     return (
       <div className="w-full max-w-[580px] overflow-hidden rounded-[18px] border border-[rgba(62,124,78,0.22)] bg-white shadow-[0_1px_0_rgba(22,20,16,0.02),0_14px_34px_-24px_rgba(22,20,16,0.2)]">
         <div className="border-b border-line-2 bg-accent-soft px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent">Event plan</p>
-              <h4 className="m-0 mt-1 text-[18px] font-semibold leading-tight text-ink">{card.event_name}</h4>
-              <p className="m-0 mt-1 text-[12.5px] leading-snug text-ink-2">{card.details}</p>
+              <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent">
+                Events list · fetched record
+              </p>
+              <h4 className="m-0 mt-1 text-[18px] font-semibold leading-tight text-ink">
+                {event?.role || card.event_name}
+              </h4>
+              <p className="m-0 mt-1 text-[12.5px] leading-snug text-ink-2">
+                {event?.description?.split("\n")[0] || card.details}
+              </p>
             </div>
-            <Pill variant="green">Ready for approval</Pill>
+            <Pill variant="green">{isApproved ? "Approved" : event?.status ? event.status.replace(/_/g, " ") : "Ready for approval"}</Pill>
           </div>
         </div>
 
-        <div className="grid gap-2.5 p-3.5 text-[12.5px] text-ink-2 sm:grid-cols-2">
-          <PlanField label="Date" value={card.event_date} />
-          <PlanField label="Time" value={card.event_time} />
-          <PlanField label="Location" value={card.location ?? "TBD"} />
-          <PlanField label="Estimated labor" value={card.estimated_labor} />
-          <PlanField label="Staff requirement" value={card.staff_requirement} wide />
-          <PlanField label="Responsibilities" value={card.responsibilities} wide />
-          <PlanField label="Inventory requirement" value={card.inventory_requirement} wide />
-          <PlanField label="Invoice amount" value={card.invoice_amount} />
+        <div className="p-3.5 text-[12.5px] text-ink-2">
+          <div className="grid gap-2 sm:grid-cols-4">
+            <RecordMetric label="When" value={event ? event.start_time : `${card.event_date} · ${card.event_time}`} />
+            <RecordMetric label="Ends" value={event?.end_time || card.event_time.split(" - ")[1] || "TBD"} />
+            <RecordMetric label="Where" value={event?.location || card.location || "TBD"} />
+            <RecordMetric label="Labor" value={event ? `$${event.pay_amount.toLocaleString()}` : card.estimated_labor} />
+          </div>
+
+          <div className="mt-3 grid gap-2">
+            <RecordRow label="Crew plan" value={card.staff_requirement} />
+            <RecordRow label="Supplies" value={card.inventory_requirement} />
+            <RecordRow label="Invoice" value={`${card.invoice_amount} total · owner approval before worker payout`} />
+          </div>
+
+          {eventSourceId ? (
+            <p className="m-0 mt-3 font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted">
+              Event source · {eventSourceId.slice(0, 8)}
+            </p>
+          ) : null}
         </div>
 
         <div className="border-t border-line-2 px-4 py-2.5">
-          <p className="m-0 text-[12.5px] leading-snug text-ink">{card.approval_question}</p>
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            {card.actions.map((a) => (
-              <CardBtn key={a.label} variant={a.variant ?? "ghost"} onClick={() => onAction?.(a.say)}>
-                {a.label}
-              </CardBtn>
-            ))}
-          </div>
+          {isApproved ? (
+            <>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="m-0 text-[12.5px] font-medium leading-snug text-ink">Plan approved.</p>
+                  <p className="m-0 mt-0.5 text-[12px] leading-snug text-ink-2">
+                    Crew shortlisting is unlocked. Make edits before outreach if anything changed.
+                  </p>
+                </div>
+                <Pill variant="green">Approved</Pill>
+              </div>
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                <CardBtn variant="primary" onClick={() => onAction?.("I want to make edits to the approved event plan first")}>
+                  Make edits
+                </CardBtn>
+                <CardBtn variant="ghost" onClick={() => onAction?.("Shortlist the best crew for this event")}>
+                  Continue to shortlist
+                </CardBtn>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="m-0 text-[12.5px] leading-snug text-ink">{card.approval_question}</p>
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {card.actions.map((a) => (
+                  <CardBtn key={a.label} variant={a.variant ?? "ghost"} onClick={() => onAction?.(a.say)}>
+                    {a.label}
+                  </CardBtn>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -836,54 +1337,58 @@ function Card({ card, onAction }: { card: AgentCard; onAction?: (say: string) =>
   if (card.kind === "bulk_outreach") {
     return (
       <div className="w-full max-w-[620px] overflow-hidden rounded-[18px] border border-line bg-white shadow-[0_1px_0_rgba(22,20,16,0.02),0_14px_34px_-24px_rgba(22,20,16,0.2)]">
-        <div className="border-b border-line-2 bg-[#F7F4EA] px-4 py-3">
+        <div className="border-b border-line-2 bg-accent-soft px-4 py-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent">Bulk outreach</p>
-              <h4 className="m-0 mt-1 text-[18px] font-semibold leading-tight text-ink">{card.title}</h4>
-              <p className="m-0 mt-1 max-w-[52ch] text-[12.5px] leading-snug text-ink-2">{card.summary}</p>
+              <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent">
+                Shortlisted crew · fetched roster
+              </p>
+              <h4 className="m-0 mt-1 text-[18px] font-semibold leading-tight text-ink">Crew shortlist</h4>
+              <p className="m-0 mt-1 max-w-[52ch] text-[12.5px] leading-snug text-ink-2">
+                {card.counts.needed}-person roster ready for approval before texts, calls, and simulated backups.
+              </p>
             </div>
-            <Pill variant={card.status === "complete" ? "green" : "default"}>{card.tag}</Pill>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
-            <MiniStat label="Needed" value={card.counts.needed} />
-            <MiniStat label="Filled" value={card.counts.filled} />
-            <MiniStat label="Texts" value={card.counts.live_texts} />
-            <MiniStat label="Calls" value={card.counts.live_calls} />
-            <MiniStat label="Sim" value={card.counts.simulated_replies} />
-            <MiniStat label="Declined" value={card.counts.declined} />
+            <Pill variant={card.status === "complete" ? "green" : "default"}>{card.status === "complete" ? "Finalized" : "Ready"}</Pill>
           </div>
         </div>
 
-        <div className="max-h-[360px] overflow-y-auto px-3.5 py-3">
-          <div className="flex flex-col gap-1.5">
-            {card.rows.map((row) => (
-              <div
-                key={`${row.name}-${row.role}`}
-                className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-[10px] border border-line-2 bg-bg px-3 py-2 text-[12.5px] sm:grid-cols-[minmax(0,1fr)_92px_96px]"
-              >
-                <div className="min-w-0">
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <b className="truncate text-[13px] font-medium text-ink">{row.name}</b>
-                    {row.live && <span className="font-mono text-[10px] uppercase tracking-wider text-accent">live</span>}
-                    {row.phone_last4 && <span className="font-mono text-[10px] text-muted">*{row.phone_last4}</span>}
+        <div className="max-h-[390px] overflow-y-auto px-3.5 py-3">
+          <div className="grid gap-2">
+            {card.rows.map((row) => {
+              const contractor = contractorsByName[eventKey(row.name)];
+              const avatarUrl = contractor?.avatar_path ? `${API_BASE_URL}${contractor.avatar_path}` : null;
+              const skills = contractor?.skills?.slice(0, 2) ?? [];
+              const speciality = [row.role, ...skills.filter((skill) => skill.toLowerCase() !== row.role.toLowerCase())]
+                .slice(0, 3)
+                .join(" · ");
+              return (
+                <div
+                  key={`${row.name}-${row.role}`}
+                  className="grid grid-cols-[42px_minmax(0,1fr)] gap-3 rounded-[12px] border border-line-2 bg-bg px-3 py-2.5 text-[12.5px] sm:grid-cols-[42px_minmax(0,1.05fr)_minmax(0,1.35fr)_116px] sm:items-center"
+                >
+                  <CrewPortrait name={row.name} avatarUrl={avatarUrl} />
+
+                  <div className="min-w-0">
+                    <small className="mb-0.5 block font-mono text-[9px] uppercase tracking-wider text-muted sm:hidden">Name</small>
+                    <b className="block truncate text-[13.5px] font-medium text-ink">{row.name}</b>
                   </div>
-                  <p className="m-0 mt-0.5 line-clamp-2 text-[12px] leading-snug text-ink-2">{row.role} - {row.response}</p>
-                  <p className="m-0 mt-0.5 truncate font-mono text-[10px] uppercase tracking-wider text-muted">{row.delivery_status}</p>
+
+                  <div className="min-w-0">
+                    <small className="mb-0.5 block font-mono text-[9px] uppercase tracking-wider text-muted sm:hidden">Speciality</small>
+                    <span className="block line-clamp-2 text-[12.5px] leading-snug text-ink-2">{speciality}</span>
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-1 sm:justify-self-end">
+                    <small className="mb-1 block font-mono text-[9px] uppercase tracking-wider text-muted sm:hidden">Availability</small>
+                    <AvailabilityPill status={row.status} />
+                  </div>
                 </div>
-                <span className="hidden self-start truncate font-mono text-[10px] uppercase tracking-wider text-muted sm:block">
-                  {row.channel}
-                </span>
-                <OutreachStatusPill status={row.status} />
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         <div className="border-t border-line-2 px-4 py-2.5">
-          {card.evidence.length > 0 && (
-            <p className="m-0 mb-2 line-clamp-2 text-[12px] leading-snug text-muted">{card.evidence.join(" ")}</p>
-          )}
           <div className="flex flex-wrap gap-2">
             {card.actions.map((a) => (
               <CardBtn key={a.label} variant={a.variant ?? "ghost"} onClick={() => onAction?.(a.say)}>
@@ -991,6 +1496,134 @@ function Card({ card, onAction }: { card: AgentCard; onAction?: (say: string) =>
                 {a.label}
               </CardBtn>
             ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (card.kind === "schedule") {
+    return (
+      <div className="w-full max-w-[620px] overflow-hidden rounded-[18px] border border-line bg-white shadow-[0_1px_0_rgba(22,20,16,0.02),0_14px_34px_-24px_rgba(22,20,16,0.2)]">
+        <div className="border-b border-line-2 bg-accent-soft px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent">
+                Event schedule · finalized roster
+              </p>
+              <h4 className="m-0 mt-1 text-[18px] font-semibold leading-tight text-ink">{card.title}</h4>
+              <p className="m-0 mt-1 max-w-[58ch] text-[12.5px] leading-snug text-ink-2">{card.summary}</p>
+            </div>
+            <Pill variant="green">{card.tag}</Pill>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px] uppercase tracking-wider text-muted">
+            <span>{card.event.date}</span>
+            <span>{card.event.time}</span>
+            <span>{card.event.location}</span>
+          </div>
+        </div>
+
+        <div className="max-h-[360px] overflow-y-auto px-3.5 py-3">
+          <div className="grid gap-2">
+            {card.rows.map((row) => (
+              <div
+                key={`${row.name}-${row.station}`}
+                className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 rounded-[12px] border border-line-2 bg-bg px-3 py-2.5 text-[12.5px] sm:grid-cols-[minmax(0,1.1fr)_minmax(0,1.3fr)_88px_72px] sm:items-center"
+              >
+                <div className="min-w-0">
+                  <b className="block truncate text-[13.5px] font-medium text-ink">{row.name}</b>
+                  <span className="block text-[11.5px] text-ink-2">{row.role}</span>
+                </div>
+                <div className="min-w-0">
+                  <span className="block line-clamp-2 text-[12.5px] leading-snug text-ink-2">{row.station}</span>
+                  <span className="block text-[11px] font-mono text-muted">{row.shift}</span>
+                </div>
+                <span className="font-mono text-[12px] text-ink">Call {row.call_time}</span>
+                <b className="justify-self-end text-[13px] font-semibold text-ink">{row.pay}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-line-2 px-4 py-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-ink-2">
+            <span>
+              <b className="text-ink">{card.totals.crew}-person crew</b> · arrive by{" "}
+              <b className="text-ink">{card.totals.arrive_by}</b>
+            </span>
+            <span>
+              Labor total <b className="text-ink">{card.totals.labor}</b>
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {card.actions.map((a) => (
+              <CardBtn key={a.label} variant={a.variant ?? "ghost"} onClick={() => onAction?.(a.say)}>
+                {a.label}
+              </CardBtn>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (card.kind === "supplies") {
+    return (
+      <div className="w-full max-w-[580px] overflow-hidden rounded-[18px] border border-line bg-white shadow-[0_1px_0_rgba(22,20,16,0.02),0_14px_34px_-24px_rgba(22,20,16,0.2)]">
+        <div className="border-b border-line-2 bg-[#F6F2E8] px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="m-0 font-mono text-[10.5px] uppercase tracking-[0.12em] text-accent">
+                Supplies · Browser Use ready
+              </p>
+              <h4 className="m-0 mt-1 text-[18px] font-semibold leading-tight text-ink">{card.title}</h4>
+              <p className="m-0 mt-1 max-w-[56ch] text-[12.5px] leading-snug text-ink-2">{card.summary}</p>
+            </div>
+            <Pill variant="green">{card.tag}</Pill>
+          </div>
+        </div>
+
+        <div className="px-3.5 py-3">
+          <div className="grid gap-2">
+            {card.items.map((item) => (
+              <div
+                key={item.name}
+                className="grid grid-cols-[minmax(0,1fr)_60px_70px] gap-2 rounded-[10px] border border-line-2 bg-bg px-3 py-2 text-[12.5px]"
+              >
+                <div className="min-w-0">
+                  <b className="block truncate text-[13px] font-medium text-ink">{item.name}</b>
+                  <span className="block text-[11.5px] text-ink-2">{item.note}</span>
+                </div>
+                <span className="self-center text-[12.5px] text-ink-2">×{item.qty}</span>
+                <b className="self-center justify-self-end text-[13px] font-semibold text-ink">{item.amount}</b>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[12.5px] text-ink-2">
+            <span>{card.vendors.length} vendors: {card.vendors.join(", ")}</span>
+            <span>
+              Estimated total <b className="text-ink">{card.total}</b>
+            </span>
+          </div>
+        </div>
+
+        <div className="border-t border-line-2 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {card.open_link ? (
+              <Link
+                href={card.open_link}
+                className="inline-flex items-center rounded-[10px] border border-[rgba(62,124,78,0.3)] bg-accent px-3 py-1.5 text-[12.5px] font-medium text-panel hover:opacity-90"
+              >
+                Open Browser Use →
+              </Link>
+            ) : null}
+            {card.actions
+              .filter((a) => !/open .*browser use/i.test(a.label))
+              .map((a) => (
+                <CardBtn key={a.label} variant={a.variant ?? "ghost"} onClick={() => onAction?.(a.say)}>
+                  {a.label}
+                </CardBtn>
+              ))}
           </div>
         </div>
       </div>
@@ -1137,11 +1770,79 @@ function Card({ card, onAction }: { card: AgentCard; onAction?: (say: string) =>
   );
 }
 
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "CL";
+}
+
+function CrewPortrait({ name, avatarUrl }: { name: string; avatarUrl: string | null }) {
+  if (avatarUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={avatarUrl}
+        alt={`${name} profile`}
+        className="h-[42px] w-[42px] rounded-full border border-line-2 object-cover"
+      />
+    );
+  }
+  return (
+    <span className="grid h-[42px] w-[42px] place-items-center rounded-full border border-line-2 bg-[#E5E0D2] text-[11.5px] font-semibold text-[#5B5648]">
+      {initials(name)}
+    </span>
+  );
+}
+
+function availabilityLabel(status: string) {
+  if (status === "ready") return "Available";
+  if (status === "queued") return "Backup ready";
+  if (status === "confirmed") return "Confirmed";
+  if (status === "backup_confirmed") return "Backup confirmed";
+  if (status === "declined") return "Unavailable";
+  return status.replace(/_/g, " ");
+}
+
+function AvailabilityPill({ status }: { status: string }) {
+  const cls =
+    status === "confirmed" || status === "backup_confirmed" || status === "ready"
+      ? "bg-accent-soft text-accent"
+      : status === "declined"
+        ? "bg-urgent-soft text-urgent"
+        : "bg-[#F0EDE3] text-muted";
+  return (
+    <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider ${cls}`}>
+      {availabilityLabel(status)}
+    </span>
+  );
+}
+
 function PlanField({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
   return (
     <div className={wide ? "sm:col-span-2" : ""}>
       <small className="mb-1 block font-mono text-[9.5px] uppercase tracking-wider text-muted">{label}</small>
       <span className="block rounded-[9px] border border-line-2 bg-bg px-2.5 py-1.5 leading-snug text-ink">{value}</span>
+    </div>
+  );
+}
+
+function RecordMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[10px] border border-line-2 bg-bg px-3 py-2">
+      <small className="block font-mono text-[9.5px] uppercase tracking-wider text-muted">{label}</small>
+      <b className="mt-1 block truncate text-[12.5px] font-medium text-ink">{value}</b>
+    </div>
+  );
+}
+
+function RecordRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-1 rounded-[12px] border border-line-2 bg-white px-3 py-2.5 sm:grid-cols-[92px_1fr]">
+      <small className="font-mono text-[9.5px] uppercase tracking-wider text-muted">{label}</small>
+      <span className="text-[12.5px] leading-snug text-ink">{value}</span>
     </div>
   );
 }
@@ -1265,7 +1966,10 @@ function Composer({
 }: ComposerProps) {
   const canSend = !sending && (draft.trim().length > 0 || pending.length > 0);
   return (
-    <div className="px-5 pb-6 pt-3 md:px-9" style={{ background: "linear-gradient(to top, var(--color-bg) 60%, transparent)" }}>
+    <div
+      className="z-[3] shrink-0 border-t border-line-2 px-5 pb-6 pt-3 md:px-9"
+      style={{ background: "linear-gradient(to top, var(--color-bg) 72%, color-mix(in oklab, var(--color-bg) 88%, transparent))" }}
+    >
       <div className="mx-auto mb-2 flex max-w-[780px] items-center gap-2.5 font-mono text-[11.5px] uppercase tracking-wider text-muted">
         <span className="h-[5px] w-[5px] rounded-full bg-accent" />
         Loop can plan, shortlist, text, call, buy supplies, invoice, and hold payments · owner approves actions

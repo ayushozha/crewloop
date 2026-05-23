@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CrewLoop">
+  <rect width="64" height="64" rx="14" fill="#161410"/>
+  <svg x="12" y="12" width="40" height="40" viewBox="0 0 14 14" fill="none">
+    <path d="M2 7a5 5 0 1 1 8.5 3.5" stroke="#FBFAF6" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M10.5 7.5L10.5 10.5L7.5 10.5" stroke="#FBFAF6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</svg>

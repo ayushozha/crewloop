@@ -26,6 +26,14 @@ export const metadata: Metadata = {
   title: "CrewLoop — The action OS for small business",
   description:
     "CrewLoop turns small business requests into finished operations: source evidence, texts, calls, emails, payment rules, proof, and an audit timeline.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

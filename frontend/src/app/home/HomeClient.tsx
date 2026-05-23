@@ -244,6 +244,11 @@ interface ExampleChip {
 
 const EXAMPLE_CHIPS: ExampleChip[] = [
   {
+    fill: "We have a corporate dinner this Saturday from 6 PM to 11 PM at 123 Market St in SoMa for 80 guests. Please fulfill the event end to end: staff 10 people, get the required bar supplies, prepare the client invoice, confirm the crew, and hold worker pay until check-in, proof of work, and owner approval.",
+    label: "Start demo",
+    tone: "accent",
+  },
+  {
     fill: "Need a bartender tonight 6–10 PM at Bay Events, SoMa, $120. Must have event experience. Urgent.",
     label: "Urgent bartender shift",
     tone: "urgent",
@@ -270,6 +275,8 @@ const EXAMPLE_CHIPS: ExampleChip[] = [
 export function HomeClient() {
   const [contractorCount, setContractorCount] = useState<number | null>(null);
   const [composerValue, setComposerValue] = useState("");
+  const [composerError, setComposerError] = useState<string | null>(null);
+  const [submittingComposer, setSubmittingComposer] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const router = useRouter();
 
@@ -296,9 +303,23 @@ export function HomeClient() {
     ta.style.height = `${Math.min(180, ta.scrollHeight)}px`;
   }, [composerValue]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    router.push("/chat");
+    const text = composerValue.trim();
+    if (!text || submittingComposer) {
+      composerRef.current?.focus();
+      return;
+    }
+    setComposerError(null);
+    setSubmittingComposer(true);
+    try {
+      const detail = await api.createChatThread({ initial_message: text });
+      router.push(`/chat?thread=${encodeURIComponent(detail.thread.id)}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not start chat thread";
+      setComposerError(message.slice(0, 180));
+      setSubmittingComposer(false);
+    }
   };
 
   const fillExample = (text: string) => {
@@ -318,6 +339,8 @@ export function HomeClient() {
           composerValue={composerValue}
           setComposerValue={setComposerValue}
           onSubmit={handleSubmit}
+          composerError={composerError}
+          isSubmitting={submittingComposer}
           onFillExample={fillExample}
         />
 
@@ -476,12 +499,16 @@ function Hero({
   composerValue,
   setComposerValue,
   onSubmit,
+  composerError,
+  isSubmitting,
   onFillExample,
 }: {
   composerRef: React.RefObject<HTMLTextAreaElement | null>;
   composerValue: string;
   setComposerValue: (v: string) => void;
   onSubmit: (e: React.FormEvent) => void;
+  composerError: string | null;
+  isSubmitting: boolean;
   onFillExample: (v: string) => void;
 }) {
   return (
@@ -495,7 +522,7 @@ function Hero({
       />
       <div className="relative">
         <h1 className="font-display m-0 mb-1.5 max-w-[22ch] text-[clamp(34px,4.4vw,52px)] font-normal leading-none tracking-[-0.022em]">
-          Good evening, Jen. <em className="italic text-accent">What needs to get done?</em>
+          Good evening, Ayush. <em className="italic text-accent">What needs to get done?</em>
         </h1>
         <p className="m-0 mb-[22px] max-w-[60ch] text-[15.5px] text-ink-2">
           Tell Loop what your business needs in plain English. It&apos;ll parse the request, verify the source, contact the right people, hold payment, collect proof, and report back — all in one tracked operation.
@@ -545,15 +572,19 @@ function Hero({
             </ComposerButton>
             <button
               type="submit"
-              className="ml-auto inline-flex items-center gap-1.5 rounded-[9px] bg-ink px-3.5 py-2 text-[13px] font-medium text-panel transition hover:-translate-y-px hover:bg-black"
+              disabled={isSubmitting}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-[9px] bg-ink px-3.5 py-2 text-[13px] font-medium text-panel transition hover:-translate-y-px hover:bg-black disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
             >
-              Send to Loop
+              {isSubmitting ? "Starting thread…" : "Send to Loop"}
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                 <path d="M2 6h7M6 3l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
           </div>
         </form>
+        {composerError ? (
+          <p className="m-0 mt-2 text-[13px] text-urgent">{composerError}</p>
+        ) : null}
 
         <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
           <span className="mr-1 font-mono text-[11px] uppercase tracking-[0.08em] text-muted">Try</span>

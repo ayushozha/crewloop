@@ -37,7 +37,8 @@ html, body {
   color: var(--color-ink);
 }
 
-a { color: inherit; text-decoration: none; }
+a { text-decoration: none; }
+a:not([class]) { color: inherit; }
 button { font: inherit; cursor: pointer; }
 
 .eyebrow {

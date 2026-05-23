@@ -107,7 +107,7 @@ export function DashboardClient() {
             <BrandMark />
             <b className="text-base font-medium text-ink">CrewLoop</b>
           </Link>
-          <span className="font-mono text-[11px] uppercase tracking-widest text-muted">· Dashboard</span>
+          <span className="font-mono text-[11px] uppercase tracking-widest text-muted">· Conversations</span>
         </div>
         <span className="font-mono text-[11px] tracking-wider text-muted">{refreshLabel}</span>
       </header>

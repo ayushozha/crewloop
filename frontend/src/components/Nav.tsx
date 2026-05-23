@@ -41,8 +41,8 @@ export function Nav() {
           </Link>
         </nav>
         <a
-          href="/browser-import"
-          className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-panel transition hover:-translate-y-px hover:bg-black"
+          href="/home"
+          className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white transition hover:-translate-y-px hover:bg-black"
         >
           Open demo
           <ArrowIcon />

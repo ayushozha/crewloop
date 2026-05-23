@@ -7,7 +7,17 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import ai, bulk_outreach, db, event_plan, invoice_email, repo, supermemory_client
+from .. import (
+    ai,
+    bulk_outreach,
+    db,
+    event_plan,
+    invoice_email,
+    repo,
+    schedule as schedule_mod,
+    supermemory_client,
+    supplies_card,
+)
 
 
 logger = logging.getLogger("crewloop.chat")
@@ -53,6 +63,7 @@ class EventDraft(BaseModel):
 
 
 class EventPlan(BaseModel):
+    source_event_id: str | None = None
     event_name: str
     details: str
     event_date: str
@@ -154,6 +165,55 @@ class ShortlistEntry(BaseModel):
     distance_miles: float | None = None
 
 
+class ScheduleRow(BaseModel):
+    name: str
+    role: str
+    call_time: str
+    shift: str
+    station: str
+    pay: str
+    phone_last4: str = ""
+    live: bool = False
+
+
+class ScheduleTotals(BaseModel):
+    crew: int
+    labor: str
+    arrive_by: str
+    live_confirmed: int = 0
+
+
+class ScheduleSnapshot(BaseModel):
+    title: str
+    tag: str
+    status: str
+    summary: str
+    event: dict[str, str]
+    rows: list[ScheduleRow] = Field(default_factory=list)
+    totals: ScheduleTotals
+    evidence: list[str] = Field(default_factory=list)
+
+
+class SupplyItem(BaseModel):
+    name: str
+    qty: str
+    note: str = ""
+    amount: str = ""
+
+
+class SuppliesSnapshot(BaseModel):
+    title: str
+    tag: str
+    status: str
+    summary: str
+    event_id: str | None = None
+    open_link: str
+    items: list[SupplyItem] = Field(default_factory=list)
+    total: str
+    vendors: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     thread_id: UUID | None = None
     reply: str
@@ -162,6 +222,8 @@ class ChatResponse(BaseModel):
     event_plan: EventPlan | None = None
     bulk_outreach: BulkOutreachSnapshot | None = None
     invoice_email: InvoiceEmailSnapshot | None = None
+    schedule: ScheduleSnapshot | None = None
+    supplies: SuppliesSnapshot | None = None
     action_chips: list[ActionChip] = Field(default_factory=list)
     shortlist: list[ShortlistEntry] = Field(default_factory=list)
 
@@ -243,6 +305,20 @@ async def _fetch_open_events() -> list[dict[str, Any]]:
         return []
 
 
+async def _latest_event_id() -> str | None:
+    """Most-recent jobs row — used to deep-link to /events/{id}/supplies."""
+    if not db.available():
+        return None
+    try:
+        async with db.pool().acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id FROM jobs ORDER BY created_at DESC LIMIT 1"
+            )
+        return str(row["id"]) if row else None
+    except Exception:
+        return None
+
+
 def _resolve_shortlist(names: list[str], lookup: dict[str, dict[str, Any]]) -> list[ShortlistEntry]:
     out: list[ShortlistEntry] = []
     for raw in names:
@@ -278,6 +354,93 @@ def _thread_title_from_text(text: str) -> str:
     return cleaned[:54] + ("…" if len(cleaned) > 54 else "")
 
 
+def _money_number(value: str) -> float:
+    cleaned = value.replace("$", "").replace(",", "").strip()
+    try:
+        return float(cleaned)
+    except ValueError:
+        return 0.0
+
+
+def _time_parts(time_window: str) -> tuple[str, str]:
+    if " - " in time_window:
+        start, end = time_window.split(" - ", 1)
+        return start.strip(), end.strip()
+    if "–" in time_window:
+        start, end = time_window.split("–", 1)
+        return start.strip(), end.strip()
+    return time_window, ""
+
+
+async def _persist_event_record(plan: dict[str, Any]) -> str | None:
+    if not db.available():
+        return None
+    start, end = _time_parts(str(plan.get("event_time") or ""))
+    description = (
+        f"{plan.get('details')}\n\n"
+        f"Crew: {plan.get('staff_requirement')}\n"
+        f"Supplies: {plan.get('inventory_requirement')}\n"
+        f"Invoice: {plan.get('invoice_amount')}"
+    )
+    sql = """
+        INSERT INTO jobs (business_name, role, description, location, start_time,
+                          end_time, pay_amount, urgency, required_skills, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10)
+        RETURNING id
+    """
+    async with db.pool().acquire() as conn:
+        row = await conn.fetchrow(
+            sql,
+            "Bay Events Co.",
+            str(plan.get("event_name") or "Event"),
+            description,
+            str(plan.get("location") or "TBD"),
+            f"{plan.get('event_date')}, {start}".strip(", "),
+            end or str(plan.get("event_time") or ""),
+            _money_number(str(plan.get("estimated_labor") or "")),
+            "standard",
+            ["bartending", "serving", "setup", "cleanup", "event lead"],
+            "plan_ready",
+        )
+    return str(row["id"]) if row else None
+
+
+def _latest_event_plan_name(turns: list[dict[str, str]]) -> str | None:
+    for turn in reversed(turns):
+        text = (turn.get("text") or "").strip()
+        for line in text.splitlines():
+            if line.lower().startswith("event plan:"):
+                name = line.split(":", 1)[1].strip()
+                if name:
+                    return name
+    return None
+
+
+async def _mark_latest_plan_approved(turns: list[dict[str, str]]) -> str | None:
+    if not db.available():
+        return None
+    plan_name = _latest_event_plan_name(turns)
+    if not plan_name:
+        return None
+    sql = """
+        WITH target AS (
+          SELECT id
+          FROM jobs
+          WHERE lower(role) = lower($1)
+            AND status NOT IN ('completed', 'cancelled')
+          ORDER BY created_at DESC
+          LIMIT 1
+        )
+        UPDATE jobs
+        SET status = 'approved'
+        WHERE id = (SELECT id FROM target)
+        RETURNING id
+    """
+    async with db.pool().acquire() as conn:
+        row = await conn.fetchrow(sql, plan_name)
+    return str(row["id"]) if row else None
+
+
 def _latest_user_turn(payload: ChatRequest) -> Turn | None:
     for turn in reversed(payload.turns):
         if turn.role == "user" and turn.text.strip():
@@ -290,6 +453,10 @@ def _assistant_body(response: ChatResponse) -> str:
         return response.reply or f"Event plan ready: {response.event_plan.event_name}"
     if response.bulk_outreach:
         return response.reply or response.bulk_outreach.summary
+    if response.schedule:
+        return response.reply or response.schedule.summary
+    if response.supplies:
+        return response.reply or response.supplies.summary
     if response.invoice_email:
         return response.reply or response.invoice_email.summary
     return response.reply
@@ -372,6 +539,7 @@ async def _generate_chat_response(payload: ChatRequest) -> ChatResponse:
 
     latest_text = event_plan.latest_user_text(turns)
     if event_plan.is_plan_approval(latest_text):
+        await _mark_latest_plan_approved(turns)
         return ChatResponse(
             reply=(
                 "Approved. I’ll shortlist the 10-person crew next, then wait for your approval "
@@ -384,20 +552,76 @@ async def _generate_chat_response(payload: ChatRequest) -> ChatResponse:
             ],
         )
 
-    inferred_plan = event_plan.infer_event_plan(latest_text)
-    if inferred_plan:
-        plan = EventPlan(**inferred_plan)
+    if event_plan.is_plan_edit_request(latest_text):
+        return ChatResponse(
+            reply="What should I change in the approved plan before outreach?",
+            intent="event_plan_edit",
+            action_chips=[
+                ActionChip(label="Edit staffing", say="Change the staff requirement"),
+                ActionChip(label="Edit supplies", say="Change the inventory requirement"),
+                ActionChip(label="Edit invoice", say="Change the invoice amount"),
+                ActionChip(label="Edit timing", say="Change the event date, time, or location"),
+            ],
+        )
+
+    if bulk_outreach.is_bulk_outreach_start(latest_text):
+        result = BulkOutreachSnapshot(**await bulk_outreach.execute_bulk_outreach(send_real=True))
         return ChatResponse(
             reply=(
-                "Here’s the concise event plan I inferred. If this looks right, approve it "
-                "and I’ll move to crew shortlisting."
+                "Bulk outreach is complete. I contacted the live targets, simulated the remaining "
+                "replies, filled the backup slot, and finalized the roster."
             ),
-            intent="event_plan",
-            event_plan=plan,
+            intent="bulk_outreach_sent",
+            bulk_outreach=result,
             action_chips=[
-                ActionChip(label="Approve plan", say="Approve this event plan"),
-                ActionChip(label="Edit staff", say="Change the staff requirement"),
-                ActionChip(label="Change budget", say="Change the invoice amount"),
+                ActionChip(label="Set schedule", say="Create the event schedule for the finalized roster"),
+                ActionChip(label="Prepare invoice", say="Prepare the client invoice next"),
+            ],
+        )
+
+    if bulk_outreach.is_shortlist_request(latest_text):
+        plan = BulkOutreachSnapshot(**bulk_outreach.build_bulk_outreach_plan())
+        return ChatResponse(
+            reply=(
+                "I have the 10-person shortlist ready. Approve bulk outreach and I’ll text the "
+                "three live contacts, call the event lead, then simulate the remaining replies."
+            ),
+            intent="bulk_outreach_ready",
+            bulk_outreach=plan,
+            action_chips=[
+                ActionChip(label="Start outreach", say="Start bulk outreach now"),
+                ActionChip(label="Edit roster", say="Edit the contractor roster before outreach"),
+            ],
+        )
+
+    if schedule_mod.is_schedule_request(latest_text):
+        snapshot = ScheduleSnapshot(**schedule_mod.build_schedule_snapshot())
+        return ChatResponse(
+            reply=(
+                "Schedule locked for the 10-person roster. Each contractor gets an SMS "
+                "with their call time, station, and Sponge wallet id."
+            ),
+            intent="schedule_ready",
+            schedule=snapshot,
+            action_chips=[
+                ActionChip(label="Recommend supplies", say="Recommend the supplies list for this event"),
+                ActionChip(label="Prepare invoice", say="Prepare the client invoice next"),
+            ],
+        )
+
+    if supplies_card.is_supplies_request(latest_text):
+        latest_event_id = await _latest_event_id()
+        snapshot = SuppliesSnapshot(**supplies_card.build_supplies_card(event_id=latest_event_id))
+        return ChatResponse(
+            reply=(
+                "Here is the supply list. Open the Browser Use room to confirm vendor "
+                "price + delivery, then pay through Sponge or Stripe."
+            ),
+            intent="supplies_ready",
+            supplies=snapshot,
+            action_chips=[
+                ActionChip(label="Open Browser Use", say="Open the Browser Use supplies room"),
+                ActionChip(label="Prepare invoice", say="Prepare the client invoice next"),
             ],
         )
 
@@ -431,33 +655,21 @@ async def _generate_chat_response(payload: ChatRequest) -> ChatResponse:
             ],
         )
 
-    if bulk_outreach.is_bulk_outreach_start(latest_text):
-        result = BulkOutreachSnapshot(**await bulk_outreach.execute_bulk_outreach(send_real=True))
+    inferred_plan = event_plan.infer_event_plan(latest_text)
+    if inferred_plan:
+        inferred_plan["source_event_id"] = await _persist_event_record(inferred_plan)
+        plan = EventPlan(**inferred_plan)
         return ChatResponse(
             reply=(
-                "Bulk outreach is complete. I contacted the live targets, simulated the remaining "
-                "replies, filled the backup slot, and finalized the roster."
+                "Here’s the concise event plan I inferred. If this looks right, approve it "
+                "and I’ll move to crew shortlisting."
             ),
-            intent="bulk_outreach_sent",
-            bulk_outreach=result,
+            intent="event_plan",
+            event_plan=plan,
             action_chips=[
-                ActionChip(label="Set schedule", say="Create the event schedule for the finalized roster"),
-                ActionChip(label="Prepare invoice", say="Prepare the client invoice next"),
-            ],
-        )
-
-    if bulk_outreach.is_shortlist_request(latest_text):
-        plan = BulkOutreachSnapshot(**bulk_outreach.build_bulk_outreach_plan())
-        return ChatResponse(
-            reply=(
-                "I have the 10-person shortlist ready. Approve bulk outreach and I’ll text the "
-                "three live contacts, call the event lead, then simulate the remaining replies."
-            ),
-            intent="bulk_outreach_ready",
-            bulk_outreach=plan,
-            action_chips=[
-                ActionChip(label="Start outreach", say="Start bulk outreach now"),
-                ActionChip(label="Edit roster", say="Edit the contractor roster before outreach"),
+                ActionChip(label="Approve plan", say="Approve this event plan"),
+                ActionChip(label="Edit staff", say="Change the staff requirement"),
+                ActionChip(label="Change budget", say="Change the invoice amount"),
             ],
         )
 

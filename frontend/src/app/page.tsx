@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import { ArrowIcon, BrandMark } from "@/components/Brand";
+import { HeroHeadlineMotion } from "@/components/HeroHeadlineMotion";
+import { HeroSubcopyMotion } from "@/components/HeroSubcopyMotion";
 import { Nav } from "@/components/Nav";
 
 const LOOP_STEPS = [
@@ -81,26 +83,18 @@ function Hero() {
   return (
     <section className="px-5 md:px-8 pt-9 md:pt-16 pb-7">
       <div className="mx-auto max-w-[1180px]">
-        <div className="mb-7 flex items-center gap-2.5">
+        <div className="mb-7 flex items-center justify-center gap-2.5">
           <span className="inline-block h-[7px] w-[7px] rounded-full bg-accent dot-pulse" aria-hidden />
           <span className="eyebrow">Small business action OS · 2-minute dispatch demo</span>
         </div>
 
-        <h1
-          className="font-display max-w-[14ch] text-[clamp(44px,7.4vw,104px)] leading-[0.98] tracking-[-0.025em] mb-6 text-ink"
-        >
-          CrewLoop is the action OS for small business.
-        </h1>
-        <p className="max-w-[54ch] text-[clamp(17px,1.6vw,20px)] leading-[1.5] text-ink-2 mb-9">
-          Owners ask in chat. CrewLoop parses the request, checks sources with Browser Use, texts or calls the right
-          person, sends the needed emails, tracks payment rules, collects proof, and writes the audit trail. The demo
-          shows the simplest version: an urgent bartender shift covered end to end.
-        </p>
+        <HeroHeadlineMotion />
+        <HeroSubcopyMotion />
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <a
-            href="/browser-import"
-            className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-panel transition hover:-translate-y-px hover:bg-black"
+            href="/home"
+            className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-sm font-medium text-white transition hover:-translate-y-px hover:bg-black"
           >
             Open demo flow
             <ArrowIcon />
@@ -444,7 +438,7 @@ function PaymentRule() {
             </p>
             <div className="mt-2 flex flex-wrap gap-3">
               <a
-                href="/browser-import"
+                href="/home"
                 className="inline-flex items-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-medium text-ink transition hover:-translate-y-px hover:border-ink"
               >
                 Open the live workflow
@@ -530,14 +524,14 @@ function ClosingCta() {
           </h2>
           <div className="flex flex-col items-start gap-2.5 md:items-end">
             <a
-              href="/browser-import"
-              className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-3.5 text-[15px] font-medium text-panel transition hover:-translate-y-px hover:bg-black"
+              href="/home"
+              className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-3.5 text-[15px] font-medium text-white transition hover:-translate-y-px hover:bg-black"
             >
               Open demo flow
               <ArrowIcon />
             </a>
             <small className="text-[13px] text-muted">
-              Start with Browser Import, then open Dispatch Room to see the full 2-minute flow.
+              Start from the operator home, then move through chat, dispatch, supplies, proof, and payment.
             </small>
           </div>
         </div>

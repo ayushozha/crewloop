@@ -28,6 +28,7 @@ export interface ChatActionChip {
 }
 
 export interface ChatEventPlan {
+  source_event_id?: string | null;
   event_name: string;
   details: string;
   event_date: string;
@@ -125,13 +126,94 @@ export interface ChatInvoiceEmail {
   evidence: string[];
 }
 
+export interface ChatScheduleRow {
+  name: string;
+  role: string;
+  call_time: string;
+  shift: string;
+  station: string;
+  pay: string;
+  phone_last4: string;
+  live: boolean;
+}
+
+export interface ChatSchedule {
+  title: string;
+  tag: string;
+  status: string;
+  summary: string;
+  event: {
+    date: string;
+    time: string;
+    location: string;
+  };
+  rows: ChatScheduleRow[];
+  totals: {
+    crew: number;
+    labor: string;
+    arrive_by: string;
+    live_confirmed: number;
+  };
+  evidence: string[];
+}
+
+export interface ChatSupplyItem {
+  name: string;
+  qty: string;
+  note: string;
+  amount: string;
+}
+
+export interface ChatSupplies {
+  title: string;
+  tag: string;
+  status: string;
+  summary: string;
+  event_id?: string | null;
+  open_link: string;
+  items: ChatSupplyItem[];
+  total: string;
+  vendors: string[];
+  evidence: string[];
+}
+
 export interface ChatResponse {
+  thread_id?: string | null;
   reply: string;
   intent?: string | null;
   event_plan?: ChatEventPlan | null;
   bulk_outreach?: ChatBulkOutreach | null;
+  schedule?: ChatSchedule | null;
+  supplies?: ChatSupplies | null;
   invoice_email?: ChatInvoiceEmail | null;
   action_chips?: ChatActionChip[];
+}
+
+export interface ChatThread {
+  id: string;
+  title: string;
+  summary?: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  message_count?: number;
+  last_message?: string | null;
+  last_role?: "user" | "agent" | string | null;
+}
+
+export interface ChatStoredMessage {
+  id: string;
+  thread_id: string;
+  role: "user" | "agent";
+  body: string;
+  payload?: ChatResponse | Record<string, unknown>;
+  attachments?: Array<{ mime_type: string; data: string; name?: string; preview_url?: string }>;
+  created_at: string;
+}
+
+export interface ChatThreadDetail {
+  thread: ChatThread;
+  messages: ChatStoredMessage[];
 }
 
 export interface SupplyItem {
@@ -271,11 +353,24 @@ export const api = {
   chat: (payload: {
     turns: Array<{ role: "user" | "model" | "assistant"; text: string }>;
     attachments?: Array<{ mime_type: string; data: string; name?: string }>;
+    thread_id?: string | null;
   }) =>
     request<ChatResponse>("/api/chat", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  listChatThreads: (limit = 50) =>
+    request<{ items: ChatThread[] }>(`/api/chat/threads?limit=${encodeURIComponent(String(limit))}`),
+
+  createChatThread: (payload: { title?: string; initial_message?: string }) =>
+    request<ChatThreadDetail>("/api/chat/threads", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getChatThread: (threadId: string) =>
+    request<ChatThreadDetail>(`/api/chat/threads/${encodeURIComponent(threadId)}`),
 
   listEvents: (status?: string) =>
     request<{ items: EventListItem[]; count: number }>(

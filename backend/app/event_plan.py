@@ -28,9 +28,35 @@ def latest_user_text(turns: list[dict[str, str]]) -> str:
     return ""
 
 
+_FOLLOWUP_BLOCKERS = (
+    "schedule",
+    "finalized roster",
+    "finalized",
+    "outreach",
+    "payment hold",
+    "payment holds",
+    "release",
+    "send the agentmail",
+    "send agentmail",
+    "send invoice",
+    "prepare the client invoice",
+    "buy the supplies",
+    "browse",
+    "open supplies",
+    "recommend supplies",
+    "create the event schedule",
+)
+
+
 def is_event_plan_request(text: str) -> bool:
     lower = text.lower()
     if "approve" in lower and "plan" in lower:
+        return False
+    if "shortlist" in lower:
+        return False
+    # Don't fire on follow-up chip texts that contain plan-y words like
+    # "event" or "invoice" — those are downstream steps, not new plans.
+    if any(blocker in lower for blocker in _FOLLOWUP_BLOCKERS):
         return False
     return any(keyword in lower for keyword in PLAN_KEYWORDS)
 
@@ -38,6 +64,12 @@ def is_event_plan_request(text: str) -> bool:
 def is_plan_approval(text: str) -> bool:
     lower = text.lower()
     return "approve" in lower and "plan" in lower
+
+
+def is_plan_edit_request(text: str) -> bool:
+    lower = text.lower()
+    wants_edit = "edit" in lower or "make edits" in lower or "change" in lower or "adjust" in lower
+    return wants_edit and "plan" in lower and not is_plan_approval(text)
 
 
 def infer_event_plan(text: str) -> dict[str, Any] | None:
