@@ -4,6 +4,11 @@
 !**/.env.example
 backend/data/
 backend/app/static/evidence/
+# Generated media stays out of git (June 2026 hardening): AI portraits,
+# AI product photos, and demo-call MP3s live on disk/CDN, not in history.
+backend/app/static/portraits/
+backend/app/static/inventory/
+backend/app/static/voice-calls/
 backend/.venv
 __pycache__
 *.pyc
