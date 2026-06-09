@@ -1,21 +1,39 @@
+import asyncio
 import logging
 import os
+import secrets as _secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 # Avoid slow entry-point scanning during local FastAPI/Pydantic startup.
 os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "1")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .routes import browser, calls, chat, contractors, conversations, dispatch, events, inventory, jobs, sms, voice_call, webhooks
-
+from . import shifts as shifts_service
+from .config import settings
+from .routes import (
+    browser,
+    calls,
+    chat,
+    contractors,
+    conversations,
+    dispatch,
+    events,
+    inventory,
+    jobs,
+    sms,
+    voice_call,
+    webhooks,
+)
+from .routes import shifts as shifts_routes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("crewloop.main")
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -23,9 +41,24 @@ STATIC_DIR = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.connect()
+    if not settings.app_password:
+        logger.warning(
+            "APP_PASSWORD is not set — the dashboard/API are open. Fine for local dev, "
+            "never for a deployed pilot."
+        )
+    if settings.demo_mode:
+        logger.warning("DEMO_MODE is ON: simulated demo flows are reachable. Turn off for pilots.")
+    if not settings.agentphone_webhook_secret:
+        logger.warning(
+            "AGENTPHONE_WEBHOOK_SECRET is not set — /webhooks/agentphone accepts UNSIGNED events. "
+            "A forged webhook could fake contractor replies or trigger opt-outs. Set it before any pilot."
+        )
+    ping_task = asyncio.create_task(shifts_service.ping_loop()) if db.available() else None
     try:
         yield
     finally:
+        if ping_task is not None:
+            ping_task.cancel()
         await db.disconnect()
 
 
@@ -45,6 +78,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Shared-password gate for concierge pilots. Protects every owner-facing
+# surface; webhooks stay open (they are HMAC-verified), health stays open for
+# probes, docs/static stay open. Per-operator auth replaces this before a
+# second operator's roster is imported.
+_PROTECTED_PREFIXES = ("/api/", "/jobs", "/dispatch")
+
+
+@app.middleware("http")
+async def app_password_gate(request: Request, call_next):
+    password = settings.app_password
+    # Lowercase before matching: routes are case-sensitive (uppercase paths 404
+    # anyway), but the gate must not be the weaker layer.
+    path = request.url.path.lower()
+    if password and request.method != "OPTIONS" and path.startswith(_PROTECTED_PREFIXES):
+        supplied = request.headers.get("x-app-password") or ""
+        if not _secrets.compare_digest(supplied, password):
+            return JSONResponse(status_code=401, content={"detail": "missing or invalid X-App-Password header"})
+    return await call_next(request)
+
+
 app.include_router(sms.router)
 app.include_router(calls.router)
 app.include_router(webhooks.router)
@@ -57,6 +110,7 @@ app.include_router(chat.router)
 app.include_router(inventory.router)
 app.include_router(events.router)
 app.include_router(voice_call.router)
+app.include_router(shifts_routes.router)
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -70,21 +124,6 @@ async def root() -> HTMLResponse:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
-
-
-@app.get("/dashboard", include_in_schema=False)
-async def dashboard() -> FileResponse:
-    return FileResponse(STATIC_DIR / "dashboard.html")
-
-
-@app.get("/browser-import", include_in_schema=False)
-async def browser_import_page() -> FileResponse:
-    return FileResponse(STATIC_DIR / "browser-import.html")
-
-
-@app.get("/bay-events/staffing", include_in_schema=False)
-async def bay_events_staffing_page() -> FileResponse:
-    return FileResponse(STATIC_DIR / "bay-events-staffing.html")
 
 
 _API_LANDING_HTML = """<!doctype html>
@@ -125,16 +164,12 @@ _API_LANDING_HTML = """<!doctype html>
     <a class="card" href="/openapi.json"><strong>OpenAPI spec &rarr;</strong><span class="muted">Machine-readable JSON.</span></a>
   </div>
 
-  <h2>UI surfaces hosted here</h2>
-  <div class="row">
-    <a class="card" href="/dashboard"><strong>/dashboard</strong><span class="muted">Conversations &amp; calls.</span></a>
-    <a class="card" href="/browser-import"><strong>/browser-import</strong><span class="muted">Roster import.</span></a>
-    <a class="card" href="/bay-events/staffing"><strong>/bay-events/staffing</strong><span class="muted">Demo staffing page.</span></a>
-  </div>
-  <p class="muted">The full Next.js owner dashboard lives at <a href="https://crewloop.ayushojha.com">crewloop.ayushojha.com</a>.</p>
+  <p class="muted">The Next.js owner dashboard lives at <a href="https://crewloop.ayushojha.com">crewloop.ayushojha.com</a>.</p>
 
   <h2>Endpoint groups</h2>
   <table>
+    <tr><td><code>POST /api/shifts</code> &amp; <code>/api/shifts/{id}/...</code></td><td>Fill-a-shift loop: create, outreach, board, cascade, call.</td></tr>
+    <tr><td><code>POST /api/contractors/import</code></td><td>Roster CSV import (name, phone, roles, priority).</td></tr>
     <tr><td><code>POST /api/sms/send</code></td><td>Outbound SMS to a contractor via AgentPhone.</td></tr>
     <tr><td><code>POST /api/calls/place</code></td><td>Place an outbound voice call.</td></tr>
     <tr><td><code>GET&nbsp; /api/conversations</code></td><td>List conversations with last-message preview and counts.</td></tr>

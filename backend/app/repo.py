@@ -1,12 +1,11 @@
+import json
 from datetime import datetime
 from decimal import Decimal
-import json
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 from . import db
-
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 STORE_PATH = DATA_DIR / "crewloop-store.json"

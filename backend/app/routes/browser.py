@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 from .. import repo
 from ..browser_import import import_shift_from_browser
 
-
 logger = logging.getLogger("crewloop.browser")
 router = APIRouter(tags=["browser-import"])
 

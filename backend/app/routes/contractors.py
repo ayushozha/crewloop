@@ -1,11 +1,28 @@
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
-from .. import db
-
+from .. import db, shifts
+from ..shift_logic import parse_roster_csv
 
 router = APIRouter(prefix="/api/contractors", tags=["contractors"])
+
+
+class RosterImportRequest(BaseModel):
+    csv_text: str = Field(..., min_length=1, description="Raw CSV with at least name and phone columns.")
+
+
+@router.post("/import")
+async def import_roster(payload: RosterImportRequest) -> dict[str, Any]:
+    """Roster CSV import: the operator pastes/uploads their crew list and we
+    upsert by phone. Columns: name, phone (required); roles, priority, rate,
+    notes, email, location (optional)."""
+    rows, errors = parse_roster_csv(payload.csv_text)
+    if not rows:
+        raise HTTPException(status_code=422, detail={"errors": errors or ["no valid rows found"]})
+    result = await shifts.import_roster(rows)
+    return {**result, "errors": errors, "total_rows": len(rows)}
 
 
 @router.get("")

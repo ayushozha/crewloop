@@ -22,17 +22,12 @@ returns the call_id so the frontend can immediately load the player.
 """
 from __future__ import annotations
 
-import json
 import logging
-import secrets
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from . import ai, db, elevenlabs_client
-from .config import settings
-
+from . import db, elevenlabs_client
 
 logger = logging.getLogger("crewloop.voice_call")
 

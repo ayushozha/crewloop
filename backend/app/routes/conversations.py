@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException
 
 from .. import repo
 
-
 router = APIRouter(prefix="/api", tags=["conversations"])
 
 

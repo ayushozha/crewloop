@@ -12,8 +12,8 @@ from typing import Any
 from . import repo
 from .agentphone import get_client
 from .config import settings
+from .demo import require_demo_mode
 from .sponsors import place_agentphone_call
-
 
 _EXECUTED_RESULT: dict[str, Any] | None = None
 
@@ -87,6 +87,7 @@ def is_bulk_outreach_start(text: str) -> bool:
 
 
 def build_bulk_outreach_plan() -> dict[str, Any]:
+    require_demo_mode("Bulk outreach demo (simulated contractor replies)")
     rows = []
     for target in LIVE_TEXT_TARGETS:
         rows.append(
@@ -141,6 +142,7 @@ def build_bulk_outreach_plan() -> dict[str, Any]:
 
 
 async def execute_bulk_outreach(*, send_real: bool = True) -> dict[str, Any]:
+    require_demo_mode("Bulk outreach demo (simulated contractor replies)")
     global _EXECUTED_RESULT
     if _EXECUTED_RESULT is not None:
         result = copy.deepcopy(_EXECUTED_RESULT)

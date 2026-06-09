@@ -4,7 +4,6 @@ from fastapi import APIRouter, HTTPException
 
 from .. import db
 
-
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
 

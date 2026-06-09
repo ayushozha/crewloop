@@ -3,9 +3,8 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .. import repo
+from .. import db, repo
 from ..agentphone import AgentPhoneError, get_client
-
 
 logger = logging.getLogger("crewloop.sms")
 router = APIRouter(prefix="/api/sms", tags=["sms"])
@@ -18,6 +17,18 @@ class SendSmsRequest(BaseModel):
 
 @router.post("/send")
 async def send_sms(payload: SendSmsRequest) -> dict:
+    # TCPA: a STOP must block every send path, including manual ones.
+    try:
+        async with db.pool().acquire() as conn:
+            row = await conn.fetchrow("SELECT opted_out FROM contractors WHERE phone = $1", payload.to)
+        if row and row["opted_out"]:
+            raise HTTPException(status_code=403, detail="recipient has opted out of CrewLoop SMS (replied STOP)")
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("opt-out check failed; refusing to send without it")
+        raise HTTPException(status_code=503, detail="could not verify opt-out status; send refused")
+
     try:
         result = await get_client().send_message(to_number=payload.to, body=payload.body)
     except AgentPhoneError as e:

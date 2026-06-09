@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 
 from .config import settings
 
-
 logger = logging.getLogger("crewloop.browser_import")
 
 STATIC_DIR = Path(__file__).parent / "static"

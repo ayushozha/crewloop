@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 SUPPLY_ITEMS: list[dict[str, Any]] = [
     {"name": "Compostable cups (16 oz)", "qty": "100", "note": "BevMo or Costco — house run", "amount": "$22"},
     {"name": "Cocktail napkins", "qty": "100", "note": "Pack of 200, BevMo", "amount": "$8"},

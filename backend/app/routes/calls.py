@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 from .. import repo
 from ..agentphone import AgentPhoneError, get_client
 
-
 logger = logging.getLogger("crewloop.calls")
 router = APIRouter(prefix="/api/calls", tags=["calls"])
 

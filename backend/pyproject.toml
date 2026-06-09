@@ -1,0 +1,19 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [".venv", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# E501 long lines in legacy demo modules; clean up as those modules get touched.
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# B008: `payload: Model = Model()` is the established FastAPI default-body idiom
+# in this codebase. B904/E402: legacy route style, fix when those flows get
+# reworked rather than churning them in the hardening PR.
+"app/routes/*" = ["B008", "B904", "E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
