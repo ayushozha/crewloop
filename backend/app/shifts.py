@@ -206,9 +206,11 @@ async def handle_inbound_sms(phone: str, body: str) -> dict[str, Any]:
             return {"handled": True, "ack": None}
         async with db.pool().acquire() as conn:
             await conn.execute("UPDATE contractors SET opted_out = true WHERE id = $1", contractor["id"])
+            # 'confirmed' included on purpose: an opted-out worker must not
+            # keep counting as filling the shift on the board.
             await conn.execute(
                 "UPDATE shift_invites SET status = 'cancelled', last_reply_at = now(), last_reply_body = $2 "
-                "WHERE contractor_id = $1 AND status IN ('invited','yes','maybe')",
+                "WHERE contractor_id = $1 AND status IN ('invited','yes','maybe','confirmed')",
                 contractor["id"], body,
             )
         return {
@@ -225,11 +227,14 @@ async def handle_inbound_sms(phone: str, body: str) -> dict[str, Any]:
         return {"handled": True, "ack": "You're opted back in to CrewLoop shift messages."}
 
     async with db.pool().acquire() as conn:
+        # 'confirmed' included: T-4 pings go to confirmed workers, and their
+        # replies (especially a late NO, i.e. a pull-out) must land on the
+        # board, not fall through to the AI auto-reply.
         invite = await conn.fetchrow(
             """
             SELECT si.*, j.role, j.location, j.start_time, j.business_name
             FROM shift_invites si JOIN jobs j ON j.id = si.job_id
-            WHERE si.contractor_id = $1 AND si.status IN ('invited','yes','maybe')
+            WHERE si.contractor_id = $1 AND si.status IN ('invited','yes','maybe','confirmed')
             ORDER BY si.created_at DESC LIMIT 1
             """,
             contractor["id"],
@@ -240,7 +245,7 @@ async def handle_inbound_sms(phone: str, body: str) -> dict[str, Any]:
 
     if intent == "yes":
         pinged = invite["ping_48_sent_at"] is not None or invite["ping_4_sent_at"] is not None
-        new_status = "confirmed" if pinged else "yes"
+        new_status = "confirmed" if (pinged or invite["status"] == "confirmed") else "yes"
         ack = (
             "Confirmed — see you there. Reply STOP anytime to opt out."
             if new_status == "confirmed"
@@ -248,7 +253,11 @@ async def handle_inbound_sms(phone: str, body: str) -> dict[str, Any]:
         )
     elif intent == "no":
         new_status = "no"
-        ack = "No worries — thanks for the quick reply."
+        ack = (
+            "Understood — you're off this shift. Thanks for telling us quickly."
+            if invite["status"] == "confirmed"
+            else "No worries — thanks for the quick reply."
+        )
     elif intent == "maybe":
         new_status = "maybe"
         ack = "Got it, we'll check back. Reply YES here as soon as you know."

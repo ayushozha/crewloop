@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 
+import { PasswordGate } from "@/components/PasswordGate";
+
 import "./globals.css";
 
 const geist = Geist({
@@ -42,7 +44,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${geist.variable} ${geistMono.variable} ${instrumentSerif.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        {/* Event-only gate (no probe): any page whose API call answers 401
+            swaps to the unlock card, so legacy operator pages work behind
+            APP_PASSWORD too. The public landing page never hits the API. */}
+        <PasswordGate probe={false}>{children}</PasswordGate>
+      </body>
     </html>
   );
 }

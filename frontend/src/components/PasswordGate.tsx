@@ -17,8 +17,18 @@ import {
  * layer dispatches UNAUTHORIZED_EVENT) — or the mount-time probe fails — the
  * page is replaced by a minimal unlock card. A successful unlock stores the
  * password in localStorage and remounts children so they refetch.
+ *
+ * `probe={false}` skips the mount-time API probe and only reacts to 401
+ * events. The root layout uses this so every legacy operator page is covered
+ * without the public landing page hitting the API on load.
  */
-export function PasswordGate({ children }: { children: React.ReactNode }) {
+export function PasswordGate({
+  children,
+  probe = true,
+}: {
+  children: React.ReactNode;
+  probe?: boolean;
+}) {
   const [locked, setLocked] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -34,11 +44,12 @@ export function PasswordGate({ children }: { children: React.ReactNode }) {
 
   // Probe once on mount so pages that don't fetch immediately still gate.
   useEffect(() => {
+    if (!probe) return;
     api.listShifts().catch(() => {
       // A 401 already dispatched UNAUTHORIZED_EVENT; other failures (API
       // down, network) are surfaced by the page's own error states.
     });
-  }, []);
+  }, [probe]);
 
   const unlock = async (e: React.FormEvent) => {
     e.preventDefault();

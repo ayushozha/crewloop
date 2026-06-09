@@ -88,9 +88,12 @@ _PROTECTED_PREFIXES = ("/api/", "/jobs", "/dispatch")
 @app.middleware("http")
 async def app_password_gate(request: Request, call_next):
     password = settings.app_password
-    # Lowercase before matching: routes are case-sensitive (uppercase paths 404
-    # anyway), but the gate must not be the weaker layer.
+    # Normalize before matching: lowercase and collapse duplicate slashes.
+    # The router 404s these variants anyway, but the gate must not be the
+    # weaker layer.
     path = request.url.path.lower()
+    while "//" in path:
+        path = path.replace("//", "/")
     if password and request.method != "OPTIONS" and path.startswith(_PROTECTED_PREFIXES):
         supplied = request.headers.get("x-app-password") or ""
         if not _secrets.compare_digest(supplied, password):
