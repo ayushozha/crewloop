@@ -109,3 +109,93 @@ export interface BrowserImportResponse {
   browser_source: BrowserSource;
   used_browser_use: boolean;
 }
+
+/* ----------------------- fill-a-shift loop ----------------------- */
+
+export type InviteStatus =
+  | "invited"
+  | "yes"
+  | "maybe"
+  | "no"
+  | "confirmed"
+  | "cancelled";
+
+export interface Shift {
+  id: string;
+  business_name: string;
+  role: string;
+  description?: string | null;
+  location: string;
+  start_time: string;
+  end_time: string;
+  pay_amount: number;
+  headcount: number;
+  status: string;
+  event_at: string | null;
+  invited_count: number;
+  yes_count: number;
+  created_at: string;
+}
+
+export interface CreateShiftPayload {
+  business_name: string;
+  role: string;
+  description?: string;
+  location: string;
+  start_time: string;
+  end_time: string;
+  pay_amount: number;
+  headcount: number;
+  urgency?: string;
+  /** ISO datetime; drives the T-48h/T-4h confirmation texts. */
+  event_at?: string;
+}
+
+export interface ShiftInvite {
+  id: string;
+  contractor_id: string;
+  name: string;
+  phone: string;
+  batch: number;
+  status: InviteStatus;
+  at_risk: boolean;
+  last_reply_body: string | null;
+  last_reply_at: string | null;
+  last_outbound_at: string | null;
+  ping_48_sent_at: string | null;
+  ping_4_sent_at: string | null;
+  priority: number;
+  reliability_score: number;
+}
+
+export interface ShiftBoardCounts {
+  needed: number;
+  filled: number;
+  invited: number;
+  yes: number;
+  maybe: number;
+  no: number;
+  confirmed: number;
+  cancelled: number;
+  at_risk: number;
+}
+
+export interface ShiftBoard {
+  job: Shift;
+  invites: ShiftInvite[];
+  counts: ShiftBoardCounts;
+}
+
+export interface OutreachResult {
+  batch: number;
+  sent: Array<{ contractor_id: string; name: string; phone: string }>;
+  errors: string[];
+  candidates: number;
+}
+
+export interface ContractorImportResult {
+  imported: number;
+  updated: number;
+  errors: string[];
+  total_rows: number;
+}

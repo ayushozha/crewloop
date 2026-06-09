@@ -36,6 +36,9 @@ export function Nav() {
           <a href="#rule" className="text-sm text-ink-2 hover:text-ink">
             Guardrails
           </a>
+          <Link href="/shifts" className="text-sm text-ink-2 hover:text-ink">
+            Shifts
+          </Link>
           <Link href="/dashboard" className="text-sm text-ink-2 hover:text-ink">
             Dashboard
           </Link>
