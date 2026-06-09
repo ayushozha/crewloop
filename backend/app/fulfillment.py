@@ -20,13 +20,13 @@ from __future__ import annotations
 import json
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from . import ai, db
 from .config import settings
-
+from .demo import require_demo_mode
 
 logger = logging.getLogger("crewloop.fulfillment")
 
@@ -277,7 +277,8 @@ async def generate_invoice(
 
 async def send_invoice(job_id: UUID) -> dict[str, Any] | None:
     """Flip the latest draft invoice to 'sent' and attach a fake AgentMail
-    message_id. The real AgentMail send is spec-marked demo-controlled."""
+    message_id. Demo-only: the message id is fabricated, nothing is emailed."""
+    require_demo_mode("Invoice send simulation (fabricated AgentMail message id)")
     sql_find = """
         SELECT * FROM client_invoices
         WHERE job_id = $1 AND status = 'draft'
@@ -302,7 +303,7 @@ async def send_invoice(job_id: UUID) -> dict[str, Any] | None:
             "inbox": settings.agentmail_inbox_name,
             "subject": f"Invoice · {existing['client_email']}",
             "status": "delivered",
-            "delivered_at": datetime.now(timezone.utc).isoformat(),
+            "delivered_at": datetime.now(UTC).isoformat(),
         })
         row = await conn.fetchrow(update_sql, existing["id"], msg_id, provider)
     return _decode(row)
@@ -331,6 +332,7 @@ async def create_payment_holds(job_id: UUID, job: dict[str, Any]) -> list[dict[s
     """One Sponge wallet hold per scheduled contractor for this job. If no
     schedule exists yet we infer from the event_plan (one hold per role-slot).
     Replaces any existing 'held' holds for the job."""
+    require_demo_mode("Worker payment holds (fabricated Sponge refs)")
     schedule = await list_schedule(job_id)
     plans = await list_event_plans(job_id)
     approved = next((p for p in plans if p["approval_status"] == "approved"), plans[0] if plans else None)

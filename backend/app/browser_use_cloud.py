@@ -22,7 +22,6 @@ import httpx
 
 from .config import settings
 
-
 logger = logging.getLogger("crewloop.browseruse")
 
 DEFAULT_MODEL = "claude-sonnet-4.6"

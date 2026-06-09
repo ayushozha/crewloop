@@ -13,7 +13,6 @@ from typing import Any
 from .config import settings
 from .sponsors import send_agentmail
 
-
 _EXECUTED_EMAIL_RESULT: dict[str, Any] | None = None
 
 
@@ -305,7 +304,7 @@ def _wallets() -> list[dict[str, Any]]:
     wallets = []
     for contractor in CONTRACTOR_ROSTER:
         slug = contractor["name"].lower().replace(" ", "-")
-        digest = hashlib.sha256(f"{slug}:{EVENT['date']}:{EVENT['time']}".encode("utf-8")).hexdigest()[:10]
+        digest = hashlib.sha256(f"{slug}:{EVENT['date']}:{EVENT['time']}".encode()).hexdigest()[:10]
         wallets.append(
             {
                 "name": contractor["name"],

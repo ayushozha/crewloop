@@ -6,7 +6,6 @@ import httpx
 from .agentphone import get_client
 from .config import settings
 
-
 logger = logging.getLogger("crewloop.sponsors")
 
 
@@ -81,6 +80,17 @@ async def _moss_manage(payload: dict[str, Any]) -> Any:
     return response.json()
 
 
+def _simulation_blocked(provider: str) -> dict[str, Any]:
+    """Pilot-mode answer for any 'pretend we sent it' request: an honest
+    disabled status instead of a fabricated success."""
+    return {
+        "status": "disabled",
+        "provider": provider,
+        "id": None,
+        "reason": "simulated sends are disabled in pilot mode (set send_real=true or DEMO_MODE=true)",
+    }
+
+
 async def send_agentphone_sms(
     *,
     to_number: str,
@@ -88,6 +98,8 @@ async def send_agentphone_sms(
     send_real: bool = False,
 ) -> dict[str, Any]:
     if not send_real:
+        if not settings.demo_mode:
+            return _simulation_blocked("agentphone")
         return {"status": "simulated", "provider": "agentphone", "id": None}
     result = await get_client().send_message(to_number=to_number, body=body)
     return {"status": "sent", "provider": "agentphone", "id": result.get("id"), "raw": result}
@@ -101,6 +113,8 @@ async def place_agentphone_call(
     send_real: bool = False,
 ) -> dict[str, Any]:
     if not send_real:
+        if not settings.demo_mode:
+            return _simulation_blocked("agentphone")
         return {"status": "simulated", "provider": "agentphone", "id": None}
     result = await get_client().place_call(
         to_number=to_number,
@@ -119,6 +133,8 @@ async def send_agentmail(
     send_real: bool = False,
 ) -> dict[str, Any]:
     if not send_real or not settings.agentmail_api_key or not settings.agentmail_inbox_id:
+        if not settings.demo_mode:
+            return _simulation_blocked("agentmail")
         return {
             "status": "simulated",
             "provider": "agentmail",
@@ -156,9 +172,15 @@ async def create_payment_hold(
     release_conditions: list[dict[str, Any]],
     execute_real: bool = False,
 ) -> dict[str, Any]:
-    # Live payment movement should never happen in this hackathon path without a
+    # Live payment movement should never happen in this path without a
     # dedicated money-flow confirmation and account setup. We still record the
     # exact Sponge/Stripe rule state the payment agent would enforce.
+    if not execute_real and not settings.demo_mode:
+        return {
+            "status": "disabled",
+            "provider": "none",
+            "reason": "payment holds are disabled in pilot mode (premise 6: CrewLoop does not touch worker pay in v1)",
+        }
     return {
         "status": "held" if execute_real else "simulated_hold",
         "provider": "sponge+stripe",
@@ -194,6 +216,12 @@ async def release_payment(
             "status": "blocked",
             "provider": "sponge+stripe",
             "reason": "release conditions incomplete",
+        }
+    if not execute_real and not settings.demo_mode:
+        return {
+            "status": "disabled",
+            "provider": "none",
+            "reason": "payment releases are disabled in pilot mode (premise 6: CrewLoop does not touch worker pay in v1)",
         }
     return {
         "status": "released" if execute_real else "simulated_release",

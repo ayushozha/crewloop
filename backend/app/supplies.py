@@ -25,14 +25,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import random
-from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
 from . import ai, browser_use_cloud, db
 from .config import settings
-
+from .demo import require_demo_mode
 
 logger = logging.getLogger("crewloop.supplies")
 
@@ -293,11 +291,12 @@ async def list_supplies(event_id: UUID | str) -> list[dict[str, Any]]:
 
 async def simulate_vendor_checkout(event_id: UUID | str) -> list[dict[str, Any]]:
     """Flip all recommended supplies for this event to 'approved' and attach
-    fake-but-shaped-like-real Browser Use vendor evidence.
+    fake-but-shaped-like-real Browser Use vendor evidence. Demo-only.
 
     Mirrors what Browser Use's API would return: a vendor URL, a screenshot
     URL (we reuse the inventory item's photo), an ETA, and a one-line note.
     """
+    require_demo_mode("Vendor checkout simulation (fabricated Browser Use evidence)")
     update_sql = """
         UPDATE event_supplies SET
           status = 'approved',
@@ -425,7 +424,8 @@ async def start_live_browse(event_id: UUID | str) -> list[dict[str, Any]]:
 async def refresh_live_browse(event_id: UUID | str) -> list[dict[str, Any]]:
     """Poll Browser Use for the latest state of each session attached to the
     event, and persist what changed (status, step_count, cost, output)."""
-    import asyncio, json as _json
+    import asyncio
+    import json as _json
 
     items = await list_supplies(event_id)
     targets = [s for s in items if s.get("bu_session_id") and s.get("bu_status") not in {"completed", "idle", "error", "timed_out"}]

@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .. import db, voice_call
-
+from ..demo import require_demo_mode
 
 router = APIRouter(prefix="/api/voice-call", tags=["voice-call"])
 
@@ -22,6 +22,7 @@ async def trigger_demo(payload: DemoCallRequest = DemoCallRequest()) -> dict[str
     """Run a full scripted shift-offer conversation. Generates ElevenLabs
     audio for every Ayush line and stores it as static MP3s. Returns the
     call id + transcript with audio paths the frontend can play."""
+    require_demo_mode("Scripted voice-call demo (the contractor side is simulated)")
     job_id = UUID(payload.job_id) if payload.job_id else None
     contractor_id = UUID(payload.contractor_id) if payload.contractor_id else None
 

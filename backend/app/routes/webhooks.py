@@ -3,12 +3,11 @@ from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from .. import ai, repo
+from .. import ai, repo, shifts
 from ..agentphone import get_client
 from ..config import settings
 from ..signature import verify_webhook
 from ..workflow import handle_contractor_message
-
 
 logger = logging.getLogger("crewloop.webhooks")
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -119,6 +118,30 @@ async def _handle_sms(data: dict) -> dict[str, Any]:
 
     # Only auto-reply on a fresh inbound (skips webhook retries and our own outbound echoes).
     if direction == "inbound" and new_row_id is not None and contractor_phone:
+        # STOP/START compliance and shift-invite replies come first. When the
+        # shift handler claims the message, nothing else may answer it.
+        try:
+            shift_result = await shifts.handle_inbound_sms(contractor_phone, body)
+        except Exception:
+            logger.exception("failed to apply contractor SMS to shift invites")
+            shift_result = {"handled": False, "ack": None}
+        if shift_result.get("handled"):
+            ack = shift_result.get("ack")
+            if ack:
+                try:
+                    result = await get_client().send_message(to_number=contractor_phone, body=ack)
+                    await repo.record_message(
+                        phone=contractor_phone,
+                        direction="outbound",
+                        body=ack,
+                        agentphone_id=result.get("id"),
+                        from_number=result.get("from_number"),
+                        to_number=contractor_phone,
+                    )
+                except Exception:
+                    logger.exception("failed to send shift-reply ack")
+            return {}
+
         try:
             workflow_result = await handle_contractor_message(contractor_phone, body)
         except Exception:

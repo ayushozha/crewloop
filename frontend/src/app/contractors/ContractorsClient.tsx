@@ -278,6 +278,7 @@ function Sidebar({ statusCounts, total }: { statusCounts: Record<DerivedStatus, 
           Workspace
         </span>
         <NavLink href="/dashboard" icon={<HomeIcon />}>Dashboard</NavLink>
+        <NavLink href="/shifts" icon={<ShiftsIcon />}>Shifts</NavLink>
         <NavLink href="/browser-import" icon={<DispatchIcon />}>
           Dispatch <span className="ml-auto font-mono text-[11px] text-muted">3</span>
         </NavLink>
@@ -379,12 +380,15 @@ function PageHead({ total }: { total: number }) {
         </p>
       </div>
       <div className="flex items-center gap-2.5">
-        <button className="inline-flex items-center gap-2 rounded-full border border-line bg-transparent px-3.5 py-2 text-[13.5px] font-medium text-ink transition hover:-translate-y-px hover:border-ink">
+        <Link
+          href="/contractors/import"
+          className="inline-flex items-center gap-2 rounded-full border border-line bg-transparent px-3.5 py-2 text-[13.5px] font-medium text-ink transition hover:-translate-y-px hover:border-ink"
+        >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M3 4h8M3 7h8M3 10h5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
           Import CSV
-        </button>
+        </Link>
         <button className="inline-flex items-center gap-2 rounded-full bg-ink px-3.5 py-2 text-[13.5px] font-medium text-panel transition hover:-translate-y-px hover:bg-black">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M7 3v8M3 7h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -875,6 +879,13 @@ function HomeIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
       <path d="M2 8l5-4 5 4v4H2V8z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function ShiftsIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path d="M8 1.5L3.5 7.5H6.5L6 12.5L10.5 6.5H7.5L8 1.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
     </svg>
   );
 }

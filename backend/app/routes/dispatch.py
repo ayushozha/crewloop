@@ -8,7 +8,6 @@ from fastapi.responses import FileResponse
 from .. import repo
 from ..dispatch_room import build_dispatch_payload
 
-
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 router = APIRouter(tags=["dispatch"])
 

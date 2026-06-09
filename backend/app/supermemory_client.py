@@ -14,7 +14,6 @@ import httpx
 
 from .config import settings
 
-
 logger = logging.getLogger("crewloop.supermemory")
 
 

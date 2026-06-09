@@ -11,6 +11,7 @@ from .. import repo
 from ..dispatch_room import rank_contractors
 from ..workflow import (
     accept_contractor,
+    approve_release,
     check_in_contractor,
     classify_contractor_reply,
     create_job_from_text,
@@ -18,9 +19,7 @@ from ..workflow import (
     parse_job_request,
     rank_job_contractors,
     run_outreach,
-    approve_release,
 )
-
 
 router = APIRouter(tags=["jobs"])
 
@@ -365,7 +364,7 @@ async def schedule_endpoint(job_id: UUID, payload: ScheduleRequest) -> dict[str,
         plan = next((p for p in plans if p["approval_status"] == "approved"), plans[0] if plans else None)
         if plan:
             for r in plan["roles"]:
-                for i in range(int(r.get("count") or 0)):
+                for _ in range(int(r.get("count") or 0)):
                     assignments.append({"role": r.get("role")})
     schedule = await fulfillment.create_schedule(job_id, job, assignments)
     await repo.create_event(

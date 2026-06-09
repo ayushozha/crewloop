@@ -14,11 +14,12 @@ from .. import (
     event_plan,
     invoice_email,
     repo,
-    schedule as schedule_mod,
     supermemory_client,
     supplies_card,
 )
-
+from .. import (
+    schedule as schedule_mod,
+)
 
 logger = logging.getLogger("crewloop.chat")
 router = APIRouter(prefix="/api/chat", tags=["chat"])

@@ -1,12 +1,10 @@
-from typing import Optional
 import logging
 
 import asyncpg
 
 from .config import settings
 
-
-_pool: Optional[asyncpg.Pool] = None
+_pool: asyncpg.Pool | None = None
 _connect_error: Exception | None = None
 logger = logging.getLogger("crewloop.db")
 INIT_SQL = """
@@ -303,6 +301,35 @@ CREATE TABLE IF NOT EXISTS voice_call_turns (
   UNIQUE (call_id, turn_index)
 );
 CREATE INDEX IF NOT EXISTS voice_call_turns_call_idx ON voice_call_turns (call_id, turn_index);
+
+-- June 2026 wedge hardening: multi-tenant prep, opt-out compliance, and the
+-- fill-a-shift loop. owner_id stays nullable until per-operator auth lands;
+-- it MUST be populated before a second operator's roster is imported.
+ALTER TABLE contractors ADD COLUMN IF NOT EXISTS owner_id text;
+ALTER TABLE contractors ADD COLUMN IF NOT EXISTS opted_out boolean NOT NULL DEFAULT false;
+ALTER TABLE contractors ADD COLUMN IF NOT EXISTS priority integer NOT NULL DEFAULT 100;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS owner_id text;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS event_at timestamptz;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS headcount integer NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS shift_invites (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id           uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  contractor_id    uuid NOT NULL REFERENCES contractors(id) ON DELETE CASCADE,
+  batch            integer NOT NULL DEFAULT 1,
+  status           text NOT NULL DEFAULT 'invited'
+                   CHECK (status IN ('invited','yes','maybe','no','confirmed','cancelled')),
+  last_outbound_at timestamptz,
+  last_reply_at    timestamptz,
+  last_reply_body  text,
+  ping_48_sent_at  timestamptz,
+  ping_4_sent_at   timestamptz,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (job_id, contractor_id)
+);
+CREATE INDEX IF NOT EXISTS shift_invites_job_idx ON shift_invites (job_id);
+CREATE INDEX IF NOT EXISTS shift_invites_contractor_idx ON shift_invites (contractor_id);
+CREATE INDEX IF NOT EXISTS shift_invites_status_idx ON shift_invites (status);
 """
 
 

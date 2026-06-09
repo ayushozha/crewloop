@@ -14,7 +14,6 @@ from .sponsors import (
     upsert_moss_contractor_memory,
 )
 
-
 REQUIRED_JOB_FIELDS = ["role", "location", "start_time", "end_time", "pay_amount"]
 
 
@@ -127,7 +126,7 @@ async def rank_job_contractors(job: dict[str, Any]) -> list[dict[str, Any]]:
         if moss_doc:
             contractor["memory_source"] = "moss"
             contractor["memory"] = {**contractor_seed_memory(contractor), **moss_doc}
-            if isinstance(moss_doc.get("reliability_score"), (int, float)):
+            if isinstance(moss_doc.get("reliability_score"), int | float):
                 reliability_delta = int(moss_doc["reliability_score"]) - int(contractor["reliability_score"])
                 contractor["reliability_score"] = int(moss_doc["reliability_score"])
                 contractor["match_score"] = max(0, contractor["match_score"] + round(reliability_delta * 0.22))
@@ -288,11 +287,14 @@ async def hold_payment_for_job(job: dict[str, Any], *, execute_real: bool = Fals
         release_conditions=conditions,
         execute_real=execute_real,
     )
+    # Pilot mode returns status 'disabled' instead of a fake hold; record it
+    # honestly rather than labeling it 'held'.
+    hold_status = "held" if provider_state.get("status") in {"held", "simulated_hold"} else "disabled"
     payment = await repo.upsert_payment(
         job_id=job["id"],
         contractor_id=contractor_id,
         amount=float(job["pay_amount"]),
-        status="held",
+        status=hold_status,
         release_conditions=conditions,
         provider_state=provider_state,
     )

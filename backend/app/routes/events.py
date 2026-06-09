@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field
 
 from .. import db, supplies
 
-
 router = APIRouter(prefix="/api/events", tags=["events"])
 
 

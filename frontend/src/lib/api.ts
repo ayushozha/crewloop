@@ -3,9 +3,14 @@ import type {
   BrowserSource,
   Call,
   Contractor,
+  ContractorImportResult,
   Conversation,
+  CreateShiftPayload,
   Job,
   Message,
+  OutreachResult,
+  Shift,
+  ShiftBoard,
 } from "./types";
 
 const fallbackApiBaseUrl =
@@ -21,6 +26,35 @@ const fallbackApiBaseUrl =
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
   fallbackApiBaseUrl;
+
+/* ----------------------------- app password ----------------------------- */
+
+const APP_PASSWORD_STORAGE_KEY = "crewloop_app_password";
+
+/**
+ * Window event dispatched whenever the backend answers 401. <PasswordGate>
+ * listens for it and swaps the page for the unlock card.
+ */
+export const UNAUTHORIZED_EVENT = "crewloop:unauthorized";
+
+export function getAppPassword(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(APP_PASSWORD_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAppPassword(password: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (password) window.localStorage.setItem(APP_PASSWORD_STORAGE_KEY, password);
+    else window.localStorage.removeItem(APP_PASSWORD_STORAGE_KEY);
+  } catch {
+    // localStorage unavailable (e.g. blocked); requests just go out unauthenticated.
+  }
+}
 
 export interface ChatActionChip {
   label: string;
@@ -269,9 +303,23 @@ export interface EventListItem {
   created_at: string;
 }
 
-class ApiError extends Error {
-  constructor(public status: number, message: string) {
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    /** Parsed JSON error body when the backend returned one (e.g. `{detail: ...}`). */
+    public body: unknown = null,
+  ) {
     super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** Thrown when the backend rejects the X-App-Password header (HTTP 401). */
+export class UnauthorizedError extends ApiError {
+  constructor(message: string, body: unknown = null) {
+    super(401, message, body);
+    this.name = "UnauthorizedError";
   }
 }
 
@@ -281,10 +329,12 @@ async function request<T>(
 ): Promise<T> {
   const { revalidate, ...rest } = init;
   const url = `${API_BASE_URL}${path}`;
+  const appPassword = getAppPassword();
   const res = await fetch(url, {
     ...rest,
     headers: {
       "Content-Type": "application/json",
+      ...(appPassword ? { "X-App-Password": appPassword } : {}),
       ...(rest.headers || {}),
     },
     // Next 16 caching: by default we want fresh data for dashboard polling,
@@ -295,7 +345,22 @@ async function request<T>(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new ApiError(res.status, text || res.statusText);
+    let body: unknown = null;
+    let message = text || res.statusText;
+    try {
+      body = JSON.parse(text);
+      const detail = (body as { detail?: unknown }).detail;
+      if (typeof detail === "string") message = detail;
+    } catch {
+      // Non-JSON error body; keep the raw text as the message.
+    }
+    if (res.status === 401) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      }
+      throw new UnauthorizedError(message, body);
+    }
+    throw new ApiError(res.status, message, body);
   }
   return res.json() as Promise<T>;
 }
@@ -411,6 +476,48 @@ export const api = {
       `/api/events/${encodeURIComponent(eventId)}/supplies/pay`,
       { method: "POST", body: JSON.stringify({ method }) },
     ),
+
+  // Fill-a-shift loop
+  createShift: (payload: CreateShiftPayload) =>
+    request<{ shift: Shift }>("/api/shifts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listShifts: () => request<{ items: Shift[] }>("/api/shifts"),
+
+  getShiftBoard: (shiftId: string) =>
+    request<ShiftBoard>(`/api/shifts/${encodeURIComponent(shiftId)}/board`),
+
+  sendShiftOutreach: (
+    shiftId: string,
+    payload: { batch_size: number; match_role: boolean },
+  ) =>
+    request<OutreachResult>(`/api/shifts/${encodeURIComponent(shiftId)}/outreach`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  cascadeShiftOutreach: (
+    shiftId: string,
+    payload: { batch_size: number; match_role: boolean },
+  ) =>
+    request<OutreachResult>(`/api/shifts/${encodeURIComponent(shiftId)}/cascade`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  callShiftContractor: (shiftId: string, contractorId: string) =>
+    request<{ status: string; call_id: string; to: string }>(
+      `/api/shifts/${encodeURIComponent(shiftId)}/call/${encodeURIComponent(contractorId)}`,
+      { method: "POST" },
+    ),
+
+  importContractors: (csvText: string) =>
+    request<ContractorImportResult>("/api/contractors/import", {
+      method: "POST",
+      body: JSON.stringify({ csv_text: csvText }),
+    }),
 
   // Dispatch-room workflow actions (parallel-session backend routes).
   dispatchAction: (

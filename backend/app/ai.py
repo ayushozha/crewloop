@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import httpx
 
 from . import repo
 from .config import settings
-
 
 logger = logging.getLogger("crewloop.ai")
 
